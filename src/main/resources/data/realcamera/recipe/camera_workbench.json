@@ -1,0 +1,16 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "GGG",
+    "GCG",
+    "III"
+  ],
+  "key": {
+    "G": "minecraft:glass",
+    "C": "minecraft:crafting_table",
+    "I": "minecraft:iron_ingot"
+  },
+  "result": {
+    "id": "realcamera:camera_workbench"
+  }
+}

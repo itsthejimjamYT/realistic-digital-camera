@@ -1,0 +1,18 @@
+{
+  "type": "realcamera:camera_workbench",
+  "pattern": [
+    "IIIIIII",
+    "CGGGGGP",
+    "CQQQGGP",
+    "CGGGGGP",
+    "IIIIIII"
+  ],
+  "key": {
+    "I": "minecraft:iron_ingot",
+    "G": "minecraft:glass",
+    "P": "minecraft:glass_pane",
+    "Q": "minecraft:quartz",
+    "C": "minecraft:copper_ingot"
+  },
+  "result": "realcamera:lens_70_200mm"
+}

@@ -1,0 +1,17 @@
+{
+  "type": "realcamera:camera_workbench",
+  "pattern": [
+    "   I   ",
+    " IUDUI ",
+    "IIDCDII",
+    " IUDUI ",
+    "   I   "
+  ],
+  "key": {
+    "I": "minecraft:iron_ingot",
+    "U": "minecraft:gold_ingot",
+    "D": "minecraft:diamond",
+    "C": "realcamera:camera_body"
+  },
+  "result": "realcamera:drone"
+}

@@ -1,0 +1,16 @@
+{
+  "type": "realcamera:camera_workbench",
+  "pattern": [
+    " NNNNN ",
+    "NPPPPPN",
+    "NPLLLPN",
+    "NPPPPPN",
+    " NNNNN "
+  ],
+  "key": {
+    "N": "minecraft:iron_nugget",
+    "P": "minecraft:glass_pane",
+    "L": "minecraft:lapis_lazuli"
+  },
+  "result": "realcamera:filter_polarizer"
+}

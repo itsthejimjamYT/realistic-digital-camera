@@ -1,0 +1,17 @@
+{
+  "type": "realcamera:camera_workbench",
+  "pattern": [
+    "IIIIIII",
+    "IGGGGGP",
+    "QQGGGGP",
+    "IGGGGGP",
+    "IIIIIII"
+  ],
+  "key": {
+    "I": "minecraft:iron_ingot",
+    "G": "minecraft:glass",
+    "P": "minecraft:glass_pane",
+    "Q": "minecraft:quartz"
+  },
+  "result": "realcamera:lens_24mm"
+}

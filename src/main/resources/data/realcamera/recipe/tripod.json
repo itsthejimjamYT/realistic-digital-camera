@@ -1,0 +1,15 @@
+{
+  "type": "realcamera:camera_workbench",
+  "pattern": [
+    "   B   ",
+    "   I   ",
+    "  III  ",
+    " I I I ",
+    " I I I "
+  ],
+  "key": {
+    "I": "minecraft:iron_ingot",
+    "B": "minecraft:iron_block"
+  },
+  "result": "realcamera:tripod"
+}

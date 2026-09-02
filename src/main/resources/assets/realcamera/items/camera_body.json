@@ -1,0 +1,90 @@
+{
+  "model": {
+    "type": "minecraft:select",
+    "property": "minecraft:custom_model_data",
+    "index": 0,
+    "cases": [
+      {
+        "when": "lens_14mm",
+        "model": {
+          "type": "minecraft:model",
+          "model": "realcamera:item/camera_body_lens_14mm"
+        }
+      },
+      {
+        "when": "lens_24mm",
+        "model": {
+          "type": "minecraft:model",
+          "model": "realcamera:item/camera_body_lens_24mm"
+        }
+      },
+      {
+        "when": "lens_35mm",
+        "model": {
+          "type": "minecraft:model",
+          "model": "realcamera:item/camera_body_lens_35mm"
+        }
+      },
+      {
+        "when": "lens_50mm",
+        "model": {
+          "type": "minecraft:model",
+          "model": "realcamera:item/camera_body_lens_50mm"
+        }
+      },
+      {
+        "when": "lens_85mm",
+        "model": {
+          "type": "minecraft:model",
+          "model": "realcamera:item/camera_body_lens_85mm"
+        }
+      },
+      {
+        "when": "lens_135mm",
+        "model": {
+          "type": "minecraft:model",
+          "model": "realcamera:item/camera_body_lens_135mm"
+        }
+      },
+      {
+        "when": "lens_16_35mm",
+        "model": {
+          "type": "minecraft:model",
+          "model": "realcamera:item/camera_body_lens_16_35mm"
+        }
+      },
+      {
+        "when": "lens_24_70mm",
+        "model": {
+          "type": "minecraft:model",
+          "model": "realcamera:item/camera_body_lens_24_70mm"
+        }
+      },
+      {
+        "when": "lens_70_200mm",
+        "model": {
+          "type": "minecraft:model",
+          "model": "realcamera:item/camera_body_lens_70_200mm"
+        }
+      },
+      {
+        "when": "lens_100_400mm",
+        "model": {
+          "type": "minecraft:model",
+          "model": "realcamera:item/camera_body_lens_100_400mm"
+        }
+      },
+      {
+        "when": "lens_200_600mm",
+        "model": {
+          "type": "minecraft:model",
+          "model": "realcamera:item/camera_body_lens_200_600mm"
+        }
+      }
+    ],
+    "fallback": {
+      "type": "minecraft:model",
+      "model": "realcamera:item/camera_body"
+    }
+  }
+}

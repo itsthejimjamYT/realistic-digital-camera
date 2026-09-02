@@ -1,0 +1,16 @@
+{
+  "type": "realcamera:camera_workbench",
+  "pattern": [
+    " NNNNN ",
+    "NPPPPPN",
+    "NPWWWPN",
+    "NPPPPPN",
+    " NNNNN "
+  ],
+  "key": {
+    "N": "minecraft:iron_nugget",
+    "P": "minecraft:glass_pane",
+    "W": "minecraft:white_dye"
+  },
+  "result": "realcamera:filter_mist"
+}

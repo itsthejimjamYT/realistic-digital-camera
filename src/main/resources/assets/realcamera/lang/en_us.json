@@ -1,0 +1,37 @@
+{
+  "item.realcamera.creative_camera": "Creative Camera",
+  "item.realcamera.camera_body": "Camera Body",
+  "item.realcamera.drone": "Camera Drone",
+
+  "item.realcamera.lens_14mm": "14mm f/1.8 Lens",
+  "item.realcamera.lens_24mm": "24mm f/1.4 Lens",
+  "item.realcamera.lens_35mm": "35mm f/1.4 Lens",
+  "item.realcamera.lens_50mm": "50mm f/1.4 Lens",
+  "item.realcamera.lens_85mm": "85mm f/1.4 Lens",
+  "item.realcamera.lens_135mm": "135mm f/1.8 Lens",
+  "item.realcamera.lens_16_35mm": "16-35mm f/2.8 Lens",
+  "item.realcamera.lens_24_70mm": "24-70mm f/2.8 Lens",
+  "item.realcamera.lens_70_200mm": "70-200mm f/2.8 Lens",
+  "item.realcamera.lens_100_400mm": "100-400mm f/4.5-5.6 Lens",
+  "item.realcamera.lens_200_600mm": "200-600mm f/5.6-6.3 Lens",
+
+  "item.realcamera.filter_nd8": "ND Filter",
+  "item.realcamera.filter_polarizer": "Polarizing Filter",
+  "item.realcamera.filter_mist": "Mist Filter",
+
+  "block.realcamera.camera_workbench": "Camera Workbench",
+  "item.realcamera.camera_workbench": "Camera Workbench",
+  "block.realcamera.tripod": "Tripod",
+  "item.realcamera.tripod": "Tripod",
+  "container.realcamera.camera_body": "Camera Body",
+  "container.realcamera.camera_workbench": "Camera Workbench",
+
+  "key.categories.realcamera.main": "Realistic Digital Camera",
+  "key.realcamera.panel": "Open settings panel",
+  "key.realcamera.aspect": "Cycle aspect ratio",
+  "key.realcamera.resolution": "Cycle output resolution",
+  "key.realcamera.supersample": "Cycle supersampling",
+  "key.realcamera.grid": "Cycle composition grid",
+  "key.realcamera.aperture": "Cycle aperture (f-stop)",
+  "key.realcamera.focus": "Pick focus point"
+}

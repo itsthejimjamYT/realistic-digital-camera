@@ -1,0 +1,46 @@
+{
+	"schemaVersion": 1,
+	"id": "realcamera",
+	"version": "${version}",
+	"name": "Realistic Digital Camera",
+	"description": "A working in-game camera with a full manual photo mode: aperture, shutter speed, ISO, exposure compensation and a picked focus point, with real depth of field, long exposure and film-grade rendering. Craft camera bodies, lenses and filters at the Camera Workbench and shoot handheld or from a tripod.",
+	"authors": [
+		"ItsTheJimJam"
+	],
+	"contact": {},
+	"license": "MIT",
+	"icon": "assets/realcamera/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"com.itsthejimjam.realcamera.PhotoMode"
+		],
+		"client": [
+			"com.itsthejimjam.realcamera.client.PhotoModeClient"
+		],
+		"modmenu": [
+			"com.itsthejimjam.realcamera.client.config.ModMenuIntegration"
+		],
+		"jei_mod_plugin": [
+			"com.itsthejimjam.realcamera.client.jei.PhotoModeJeiPlugin"
+		]
+	},
+	"mixins": [
+		"realcamera.mixins.json",
+		{
+			"config": "realcamera.client.mixins.json",
+			"environment": "client"
+		}
+	],
+	"depends": {
+		"fabricloader": ">=0.19.3",
+		"minecraft": "~26.2",
+		"java": ">=25",
+		"fabric-api": "*"
+	},
+	"suggests": {
+		"modmenu": "*",
+		"cloth-config": "*",
+		"jei": "*"
+	}
+}

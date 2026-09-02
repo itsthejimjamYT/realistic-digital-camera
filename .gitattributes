@@ -1,0 +1,14 @@
+# https://help.github.com/articles/dealing-with-line-endings/
+
+# Normalise line endings: store text as LF in the repo, check out native.
+* text=auto
+
+# The Unix start script must stay LF even on Windows checkouts.
+/gradlew        text eol=lf
+
+# Windows script files stay CRLF.
+*.bat           text eol=crlf
+
+# Treat generated binary assets as binary (no line-ending or diff munging).
+*.png           binary
+*.jar           binary

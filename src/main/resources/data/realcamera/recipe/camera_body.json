@@ -1,0 +1,17 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "III",
+    "GOG",
+    "IRI"
+  ],
+  "key": {
+    "I": "minecraft:iron_ingot",
+    "G": "minecraft:glass",
+    "O": "minecraft:comparator",
+    "R": "minecraft:redstone"
+  },
+  "result": {
+    "id": "realcamera:camera_body"
+  }
+}

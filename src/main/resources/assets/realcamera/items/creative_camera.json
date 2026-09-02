@@ -1,0 +1,6 @@
+{
+  "model": {
+    "type": "minecraft:model",
+    "model": "realcamera:item/creative_camera"
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "model": {
+    "type": "minecraft:model",
+    "model": "realcamera:block/camera_workbench"
+  }
+}

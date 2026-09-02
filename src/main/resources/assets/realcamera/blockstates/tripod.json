@@ -1,0 +1,184 @@
+{
+  "variants": {
+    "half=lower,mounted=false,barrel=none,facing=south": {
+      "model": "realcamera:block/tripod"
+    },
+    "half=lower,mounted=false,barrel=none,facing=west": {
+      "model": "realcamera:block/tripod",
+      "y": 90
+    },
+    "half=lower,mounted=false,barrel=none,facing=north": {
+      "model": "realcamera:block/tripod",
+      "y": 180
+    },
+    "half=lower,mounted=false,barrel=none,facing=east": {
+      "model": "realcamera:block/tripod",
+      "y": 270
+    },
+    "half=lower,mounted=false,barrel=dark,facing=south": {
+      "model": "realcamera:block/tripod"
+    },
+    "half=lower,mounted=false,barrel=dark,facing=west": {
+      "model": "realcamera:block/tripod",
+      "y": 90
+    },
+    "half=lower,mounted=false,barrel=dark,facing=north": {
+      "model": "realcamera:block/tripod",
+      "y": 180
+    },
+    "half=lower,mounted=false,barrel=dark,facing=east": {
+      "model": "realcamera:block/tripod",
+      "y": 270
+    },
+    "half=lower,mounted=false,barrel=white,facing=south": {
+      "model": "realcamera:block/tripod"
+    },
+    "half=lower,mounted=false,barrel=white,facing=west": {
+      "model": "realcamera:block/tripod",
+      "y": 90
+    },
+    "half=lower,mounted=false,barrel=white,facing=north": {
+      "model": "realcamera:block/tripod",
+      "y": 180
+    },
+    "half=lower,mounted=false,barrel=white,facing=east": {
+      "model": "realcamera:block/tripod",
+      "y": 270
+    },
+    "half=lower,mounted=true,barrel=none,facing=south": {
+      "model": "realcamera:block/tripod_cam"
+    },
+    "half=lower,mounted=true,barrel=none,facing=west": {
+      "model": "realcamera:block/tripod_cam",
+      "y": 90
+    },
+    "half=lower,mounted=true,barrel=none,facing=north": {
+      "model": "realcamera:block/tripod_cam",
+      "y": 180
+    },
+    "half=lower,mounted=true,barrel=none,facing=east": {
+      "model": "realcamera:block/tripod_cam",
+      "y": 270
+    },
+    "half=lower,mounted=true,barrel=dark,facing=south": {
+      "model": "realcamera:block/tripod_cam_dark"
+    },
+    "half=lower,mounted=true,barrel=dark,facing=west": {
+      "model": "realcamera:block/tripod_cam_dark",
+      "y": 90
+    },
+    "half=lower,mounted=true,barrel=dark,facing=north": {
+      "model": "realcamera:block/tripod_cam_dark",
+      "y": 180
+    },
+    "half=lower,mounted=true,barrel=dark,facing=east": {
+      "model": "realcamera:block/tripod_cam_dark",
+      "y": 270
+    },
+    "half=lower,mounted=true,barrel=white,facing=south": {
+      "model": "realcamera:block/tripod_cam_white"
+    },
+    "half=lower,mounted=true,barrel=white,facing=west": {
+      "model": "realcamera:block/tripod_cam_white",
+      "y": 90
+    },
+    "half=lower,mounted=true,barrel=white,facing=north": {
+      "model": "realcamera:block/tripod_cam_white",
+      "y": 180
+    },
+    "half=lower,mounted=true,barrel=white,facing=east": {
+      "model": "realcamera:block/tripod_cam_white",
+      "y": 270
+    },
+    "half=upper,mounted=false,barrel=none,facing=south": {
+      "model": "realcamera:block/tripod"
+    },
+    "half=upper,mounted=false,barrel=none,facing=west": {
+      "model": "realcamera:block/tripod",
+      "y": 90
+    },
+    "half=upper,mounted=false,barrel=none,facing=north": {
+      "model": "realcamera:block/tripod",
+      "y": 180
+    },
+    "half=upper,mounted=false,barrel=none,facing=east": {
+      "model": "realcamera:block/tripod",
+      "y": 270
+    },
+    "half=upper,mounted=false,barrel=dark,facing=south": {
+      "model": "realcamera:block/tripod"
+    },
+    "half=upper,mounted=false,barrel=dark,facing=west": {
+      "model": "realcamera:block/tripod",
+      "y": 90
+    },
+    "half=upper,mounted=false,barrel=dark,facing=north": {
+      "model": "realcamera:block/tripod",
+      "y": 180
+    },
+    "half=upper,mounted=false,barrel=dark,facing=east": {
+      "model": "realcamera:block/tripod",
+      "y": 270
+    },
+    "half=upper,mounted=false,barrel=white,facing=south": {
+      "model": "realcamera:block/tripod"
+    },
+    "half=upper,mounted=false,barrel=white,facing=west": {
+      "model": "realcamera:block/tripod",
+      "y": 90
+    },
+    "half=upper,mounted=false,barrel=white,facing=north": {
+      "model": "realcamera:block/tripod",
+      "y": 180
+    },
+    "half=upper,mounted=false,barrel=white,facing=east": {
+      "model": "realcamera:block/tripod",
+      "y": 270
+    },
+    "half=upper,mounted=true,barrel=none,facing=south": {
+      "model": "realcamera:block/tripod"
+    },
+    "half=upper,mounted=true,barrel=none,facing=west": {
+      "model": "realcamera:block/tripod",
+      "y": 90
+    },
+    "half=upper,mounted=true,barrel=none,facing=north": {
+      "model": "realcamera:block/tripod",
+      "y": 180
+    },
+    "half=upper,mounted=true,barrel=none,facing=east": {
+      "model": "realcamera:block/tripod",
+      "y": 270
+    },
+    "half=upper,mounted=true,barrel=dark,facing=south": {
+      "model": "realcamera:block/tripod"
+    },
+    "half=upper,mounted=true,barrel=dark,facing=west": {
+      "model": "realcamera:block/tripod",
+      "y": 90
+    },
+    "half=upper,mounted=true,barrel=dark,facing=north": {
+      "model": "realcamera:block/tripod",
+      "y": 180
+    },
+    "half=upper,mounted=true,barrel=dark,facing=east": {
+      "model": "realcamera:block/tripod",
+      "y": 270
+    },
+    "half=upper,mounted=true,barrel=white,facing=south": {
+      "model": "realcamera:block/tripod"
+    },
+    "half=upper,mounted=true,barrel=white,facing=west": {
+      "model": "realcamera:block/tripod",
+      "y": 90
+    },
+    "half=upper,mounted=true,barrel=white,facing=north": {
+      "model": "realcamera:block/tripod",
+      "y": 180
+    },
+    "half=upper,mounted=true,barrel=white,facing=east": {
+      "model": "realcamera:block/tripod",
+      "y": 270
+    }
+  }
+}
