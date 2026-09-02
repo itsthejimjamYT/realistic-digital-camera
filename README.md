@@ -1,6 +1,6 @@
 # Realistic Digital Camera
 
-A Fabric mod that adds a **fully functional digital camera** to Minecraft — not a
+A Fabric mod that adds a **fully functional digital camera** to Minecraft (CURRENTLY ONLY VERSION 26.2) — not a
 screenshot filter. Pick an exposure mode, dial in aperture / shutter / ISO (or let the
 camera do it), fit a lens and a filter, choose your focus point, and take a shot that
 renders real optical depth of field. Every photo is written out as a PNG on your PC.
