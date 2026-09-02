@@ -29,10 +29,56 @@ renders real optical depth of field. Every photo is written out as a PNG on your
 
 ## Crafting
 
-- The **camera body** and the **Camera Workbench** are crafted at a normal crafting table.
-- **Lenses, filters, the tripod and the camera drone** are crafted at the **Camera
-  Workbench**. Install [JEI](https://modrinth.com/mod/jei) to browse those recipes, and
-  use its **+** button to lay one out from your inventory.
+The **camera body** and the **Camera Workbench** itself are crafted at a normal crafting
+table. **Lenses, filters, the tripod and the camera drone** are crafted at the **Camera
+Workbench**. Install [JEI](https://modrinth.com/mod/jei) to browse the recipes in-game —
+its **+** button lays one straight into the bench from your inventory.
+
+### Camera body &amp; workbench &nbsp;·&nbsp; *crafting table*
+
+| Camera Body | Camera Workbench |
+| :---: | :---: |
+| ![Camera Body recipe](Docs/CameraBodyCraftingRecipe.png) | ![Camera Workbench recipe](Docs/CameraWorkbenchCraftingRecipe.png) |
+
+### Tripod &amp; drone &nbsp;·&nbsp; *Camera Workbench*
+
+| Tripod | Camera Drone |
+| :---: | :---: |
+| ![Tripod recipe](Docs/TripodCraftingRecipe.png) | ![Drone recipe](Docs/DroneCraftingRecipe.png) |
+
+### Filters &nbsp;·&nbsp; *Camera Workbench*
+
+| ND | Polarizer | Mist |
+| :---: | :---: | :---: |
+| ![ND filter recipe](Docs/NDFilterCraftingRecipe.png) | ![Polarizer recipe](Docs/PolarizerFilterCraftingRecipe.png) | ![Mist filter recipe](Docs/MistFilterCraftingRecipe.png) |
+
+### Lenses &nbsp;·&nbsp; *Camera Workbench*
+
+<details>
+<summary><b>Primes</b> — 14, 24, 35, 50, 85, 135&nbsp;mm</summary>
+
+| 14&nbsp;mm | 24&nbsp;mm | 35&nbsp;mm |
+| :---: | :---: | :---: |
+| ![14mm recipe](Docs/14mmLensCraftingRecipe.png) | ![24mm recipe](Docs/24mmLensCraftingRecipe.png) | ![35mm recipe](Docs/35mmLensCraftingRecipe.png) |
+
+| 50&nbsp;mm | 85&nbsp;mm | 135&nbsp;mm |
+| :---: | :---: | :---: |
+| ![50mm recipe](Docs/50mmLensCraftingRecipe.png) | ![85mm recipe](Docs/85mmLensCraftingRecipe.png) | ![135mm recipe](Docs/135mmLensCraftingRecipe.png) |
+
+</details>
+
+<details>
+<summary><b>Zooms</b> — 16–35, 24–70, 70–200, 100–400, 200–600&nbsp;mm</summary>
+
+| 16–35&nbsp;mm | 24–70&nbsp;mm | 70–200&nbsp;mm |
+| :---: | :---: | :---: |
+| ![16-35mm recipe](Docs/16-35mmLensCraftingRecipe.png) | ![24-70mm recipe](Docs/24-70mmLensCraftingRecipe.png) | ![70-200mm recipe](Docs/70-200mmLensCraftingRecipe.png) |
+
+| 100–400&nbsp;mm | 200–600&nbsp;mm | &nbsp; |
+| :---: | :---: | :---: |
+| ![100-400mm recipe](Docs/100-400mmLensCraftingRecipe.png) | ![200-600mm recipe](Docs/200-600mmLensCraftingRecipe.png) | &nbsp; |
+
+</details>
 
 ## Where your photos go
 
