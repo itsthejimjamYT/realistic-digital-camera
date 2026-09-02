@@ -25,7 +25,7 @@ renders real optical depth of field. Every photo is written out as a PNG on your
   lens is fitted and points the way you were facing when you set it down.
 - **Composition aids** — aspect-ratio framing guides, rule-of-thirds / golden / centre
   grids, a focus-peaking and clipping-warning overlay.
-- **Output** — up to 4K with supersampling, long exposure, and exposure bracketing.
+- **Output** — up to 8K, with up to 4× supersampling, long exposure, and exposure bracketing.
 
 ## Crafting
 
