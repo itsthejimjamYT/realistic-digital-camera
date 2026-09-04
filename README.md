@@ -1,7 +1,7 @@
 # Realistic Digital Camera
 
-A Fabric mod that adds a **fully functional digital camera** to Minecraft (CURRENTLY ONLY VERSION 26.2) — not a
-screenshot filter. Pick an exposure mode, dial in aperture / shutter / ISO (or let the
+A Fabric mod that adds a **fully functional digital camera** to Minecraft (CURRENTLY ONLY VERSION 26.2)
+Pick an exposure mode, dial in aperture / shutter / ISO (or let the
 camera do it), fit a lens and a filter, choose your focus point, and take a shot that
 renders real optical depth of field. Every photo is written out as a PNG on your PC.
 
@@ -18,8 +18,8 @@ renders real optical depth of field. Every photo is written out as a PNG on your
 - **Filters** — ND (long exposures in daylight), circular polarizer, and mist / diffusion.
 - **Depth of field** — physically based, driven by focal length and aperture, focused on
   a point you pick from the scene. Works with vanilla rendering and with shader packs.
-- **Film looks** — a set of built-in colour grades plus three editable custom recipes:
-  film-sim base, dynamic range, highlight / shadow tone, colour, split-toning, grain and
+- **Film looks** — a set of built-in color grades plus three editable custom recipes:
+  film-sim base, dynamic range, highlight / shadow tone, color, split-toning, grain and
   a matte fade.
 - **Tripod** — a placeable stand for locked-off shots. The mounted camera shows whatever
   lens is fitted and points the way you were facing when you set it down.
