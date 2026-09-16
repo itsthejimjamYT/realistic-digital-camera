@@ -21,6 +21,8 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
+import org.joml.Matrix4f;
+
 /**
  * The tripod is {@link net.minecraft.world.level.block.RenderShape#INVISIBLE} to the chunk
  * mesher (the only reliable way to keep it out of its own photo while Sodium meshes the
@@ -90,7 +92,7 @@ public class TripodBlockEntityRenderer implements BlockEntityRenderer<TripodBloc
 		// away) — that keeps the feet inside the block's footprint, not hanging off.
 		pose.pushPose();
 		pose.translate(0.5f, 0.0f, 0.5f);
-		pose.mulPose(Axis.YP.rotationDegrees(45.0f));
+		pose.mulPose(Axis.YP.rotateDegrees(new Matrix4f(), 45.0f));
 		pose.translate(-0.5f, 0.0f, -0.5f);
 		col.submitMovingBlock(pose, stand, 0);
 		pose.popPose();
@@ -98,7 +100,7 @@ public class TripodBlockEntityRenderer implements BlockEntityRenderer<TripodBloc
 		if (s.hasCamera) {
 			pose.pushPose();
 			pose.translate(0.5f, PLATE_TOP, 0.5f);
-			pose.mulPose(Axis.YP.rotationDegrees(-s.facing.toYRot()));
+			pose.mulPose(Axis.YP.rotateDegrees(new Matrix4f(), -s.facing.toYRot()));
 			pose.scale(CAM_SCALE, CAM_SCALE, CAM_SCALE);
 			AABB bb = s.camera.getModelBoundingBox();
 			pose.translate(0.0, -bb.minY, 0.0);   // lowest point (body base, or the lens' own foot) on the plate

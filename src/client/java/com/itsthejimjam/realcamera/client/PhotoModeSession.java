@@ -3,7 +3,7 @@ package com.itsthejimjam.realcamera.client;
 import com.itsthejimjam.realcamera.FilterSpec;
 import com.itsthejimjam.realcamera.LensSpec;
 import com.itsthejimjam.realcamera.PhotoMode;
-import com.mojang.blaze3d.textures.GpuTextureView;
+import com.mojang.renderpearl.api.textures.GpuTextureView;
 
 import net.minecraft.client.CameraType;
 import net.minecraft.client.Minecraft;

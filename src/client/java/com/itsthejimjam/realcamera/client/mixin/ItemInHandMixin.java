@@ -2,7 +2,7 @@ package com.itsthejimjam.realcamera.client.mixin;
 
 import com.itsthejimjam.realcamera.client.PhotoModeSession;
 
-import net.minecraft.client.renderer.ItemInHandRenderer;
+import net.minecraft.client.renderer.FirstPersonHandsAndItemsRenderer;
 
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -14,7 +14,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * shared entry point, so it also stops the shader pack drawing the hand through its own pipeline
  * (which {@code HandRenderMixin} on {@code GameRenderer} can't reach).
  */
-@Mixin(ItemInHandRenderer.class)
+@Mixin(FirstPersonHandsAndItemsRenderer.class)
 public class ItemInHandMixin {
 
 	@Inject(method = "submitHandsWithItems", at = @At("HEAD"), cancellable = true)

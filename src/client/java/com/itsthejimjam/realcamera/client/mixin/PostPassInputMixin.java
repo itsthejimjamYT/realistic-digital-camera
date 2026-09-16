@@ -4,7 +4,7 @@ import java.util.Map;
 
 import com.itsthejimjam.realcamera.PhotoMode;
 import com.itsthejimjam.realcamera.client.PhotoModeSession;
-import com.mojang.blaze3d.textures.GpuTextureView;
+import com.mojang.renderpearl.api.textures.GpuTextureView;
 
 import net.minecraft.client.renderer.PostChain;
 import net.minecraft.client.renderer.PostPass;

@@ -5,24 +5,24 @@ import java.nio.ByteBuffer;
 import java.util.Optional;
 
 import com.itsthejimjam.realcamera.PhotoMode;
-import com.mojang.blaze3d.GpuFormat;
-import com.mojang.blaze3d.PrimitiveTopology;
-import com.mojang.blaze3d.buffers.GpuBuffer;
-import com.mojang.blaze3d.buffers.GpuBufferSlice;
+import com.mojang.renderpearl.api.GpuFormat;
+import com.mojang.renderpearl.api.pipeline.PrimitiveTopology;
+import com.mojang.renderpearl.api.buffers.GpuBuffer;
+import com.mojang.renderpearl.api.buffers.GpuBufferSlice;
 import com.mojang.blaze3d.buffers.Std140Builder;
-import com.mojang.blaze3d.pipeline.BindGroupLayout;
-import com.mojang.blaze3d.pipeline.ColorTargetState;
-import com.mojang.blaze3d.pipeline.CompiledRenderPipeline;
-import com.mojang.blaze3d.pipeline.RenderPipeline;
+import com.mojang.renderpearl.api.pipeline.BindGroupLayout;
+import com.mojang.renderpearl.api.pipeline.ColorTargetState;
+import com.mojang.renderpearl.api.pipeline.CompiledRenderPipeline;
+import com.mojang.renderpearl.api.pipeline.RenderPipeline;
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.pipeline.TextureTarget;
-import com.mojang.blaze3d.shaders.UniformType;
-import com.mojang.blaze3d.systems.CommandEncoder;
-import com.mojang.blaze3d.systems.RenderPass;
+import com.mojang.renderpearl.api.pipeline.UniformType;
+import com.mojang.renderpearl.api.commands.CommandEncoder;
+import com.mojang.renderpearl.api.commands.RenderPass;
 import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.textures.FilterMode;
-import com.mojang.blaze3d.textures.GpuSampler;
-import com.mojang.blaze3d.textures.GpuTextureView;
+import com.mojang.renderpearl.api.textures.FilterMode;
+import com.mojang.renderpearl.api.textures.GpuSampler;
+import com.mojang.renderpearl.api.textures.GpuTextureView;
 
 import net.minecraft.client.renderer.BindGroupLayouts;
 import net.minecraft.client.renderer.RenderPipelines;
@@ -119,6 +119,7 @@ public final class HdrCapture {
 	private static final boolean ENHANCED_DOF_DISABLED = false;
 
 	private static RenderPipeline pipeline;
+	private static CompiledRenderPipeline compiledPipeline;
 	private static boolean pipelineValid;
 	private static boolean pipelineLogged;
 	private static GpuBuffer uniformBuffer;
@@ -127,6 +128,9 @@ public final class HdrCapture {
 	private static RenderPipeline prefilterHPipeline;
 	private static RenderPipeline prefilterVPipeline;
 	private static RenderPipeline gatherPipeline;
+	private static CompiledRenderPipeline compiledPrefilterH;
+	private static CompiledRenderPipeline compiledPrefilterV;
+	private static CompiledRenderPipeline compiledGather;
 	private static boolean dofPipelinesValid;
 	private static GpuBuffer dofUniformBuffer;
 	private static TextureTarget preH;
@@ -157,8 +161,13 @@ public final class HdrCapture {
 						Optional.empty(), GpuFormat.RGBA16_FLOAT, ColorTargetState.WRITE_ALL))
 				.withPrimitiveTopology(PrimitiveTopology.TRIANGLES)
 				.build();
-		CompiledRenderPipeline compiled = RenderSystem.getDevice().precompilePipeline(pipeline);
-		pipelineValid = compiled.isValid();
+		try {
+			compiledPipeline = RenderSystem.getCompiledPipeline(pipeline);
+		} catch (Throwable t) {
+			compiledPipeline = null;
+			PhotoMode.LOGGER.error("[Photo Mode] HdrCapture pipeline compile failed", t);
+		}
+		pipelineValid = compiledPipeline != null;
 		PhotoMode.LOGGER.info("[Photo Mode] HdrCapture pipeline compiled: valid={}", pipelineValid);
 		uniformBuffer = RenderSystem.getDevice().createBuffer(
 				() -> "realcamera ExposeConfig",
@@ -172,9 +181,9 @@ public final class HdrCapture {
 					.withUniform(DOF_BLOCK, UniformType.UNIFORM_BUFFER)
 					.build();
 			BindGroupLayout gatherSamplers = BindGroupLayout.builder()
-					.withSampler("MainSampler")
-					.withSampler("PreSampler")
-					.withSampler("MainDepthSampler")
+					.withUniform("MainSampler", UniformType.COMBINED_IMAGE_SAMPLER)
+					.withUniform("PreSampler", UniformType.COMBINED_IMAGE_SAMPLER)
+					.withUniform("MainDepthSampler", UniformType.COMBINED_IMAGE_SAMPLER)
 					.build();
 			ColorTargetState rgba8 = new ColorTargetState(
 					Optional.empty(), GpuFormat.RGBA8_UNORM, ColorTargetState.WRITE_ALL);
@@ -209,9 +218,12 @@ public final class HdrCapture {
 					.withPrimitiveTopology(PrimitiveTopology.TRIANGLES)
 					.build();
 
-			boolean hValid = RenderSystem.getDevice().precompilePipeline(prefilterHPipeline).isValid();
-			boolean vValid = RenderSystem.getDevice().precompilePipeline(prefilterVPipeline).isValid();
-			boolean gValid = RenderSystem.getDevice().precompilePipeline(gatherPipeline).isValid();
+			compiledPrefilterH = RenderSystem.getCompiledPipeline(prefilterHPipeline);
+			compiledPrefilterV = RenderSystem.getCompiledPipeline(prefilterVPipeline);
+			compiledGather = RenderSystem.getCompiledPipeline(gatherPipeline);
+			boolean hValid = compiledPrefilterH != null;
+			boolean vValid = compiledPrefilterV != null;
+			boolean gValid = compiledGather != null;
 			dofPipelinesValid = hValid && vValid && gValid;
 			PhotoMode.LOGGER.info(
 					"[Photo Mode] HdrCapture DoF pipelines compiled: preH={} preV={} gather={}",
@@ -229,7 +241,10 @@ public final class HdrCapture {
 
 	private static void ensureTarget(int width, int height) {
 		if (hdrTarget == null) {
-			hdrTarget = new TextureTarget("realcamera hdr expose", width, height, false, GpuFormat.RGBA16_FLOAT);
+			// (label, width, height, colorFormat, depthFormat) — null depthFormat means no
+			// depth attachment at all (confirmed against RenderTarget's own bytecode: it
+			// only allocates a depth texture when this is non-null).
+			hdrTarget = new TextureTarget("realcamera hdr expose", width, height, GpuFormat.RGBA16_FLOAT, null);
 		} else if (hdrTarget.width != width || hdrTarget.height != height) {
 			hdrTarget.resize(width, height);
 		}
@@ -237,17 +252,17 @@ public final class HdrCapture {
 			return;
 		}
 		if (preH == null) {
-			preH = new TextureTarget("realcamera dof preh", width, height, false, GpuFormat.RGBA8_UNORM);
+			preH = new TextureTarget("realcamera dof preh", width, height, GpuFormat.RGBA8_UNORM, null);
 		} else if (preH.width != width || preH.height != height) {
 			preH.resize(width, height);
 		}
 		if (pre == null) {
-			pre = new TextureTarget("realcamera dof pre", width, height, false, GpuFormat.RGBA8_UNORM);
+			pre = new TextureTarget("realcamera dof pre", width, height, GpuFormat.RGBA8_UNORM, null);
 		} else if (pre.width != width || pre.height != height) {
 			pre.resize(width, height);
 		}
 		if (gathered == null) {
-			gathered = new TextureTarget("realcamera dof gathered", width, height, false, GpuFormat.RGBA16_FLOAT);
+			gathered = new TextureTarget("realcamera dof gathered", width, height, GpuFormat.RGBA16_FLOAT, null);
 		} else if (gathered.width != width || gathered.height != height) {
 			gathered.resize(width, height);
 		}
@@ -296,10 +311,10 @@ public final class HdrCapture {
 			CommandEncoder encoder = RenderSystem.getDevice().createCommandEncoder();
 			GpuTextureView exposeOutput = hdrTarget.getColorTextureView();
 			try (RenderPass pass = encoder.createRenderPass(() -> "realcamera expose", exposeOutput, Optional.empty())) {
-				pass.setPipeline(pipeline);
+				pass.setPipeline(compiledPipeline);
 				RenderSystem.bindDefaultUniforms(pass);
 				pass.setUniform(BLOCK, uniformBuffer);
-				pass.bindTexture("InSampler", colorSource,
+				pass.setUniform("InSampler", colorSource,
 						RenderSystem.getSamplerCache().getClampToEdge(FilterMode.LINEAR));
 				pass.draw(3, 1, 0, 0);
 			}
@@ -339,28 +354,28 @@ public final class HdrCapture {
 
 		try (RenderPass pass = RenderSystem.getDevice().createCommandEncoder().createRenderPass(
 				() -> "realcamera dof preh", preH.getColorTextureView(), Optional.empty())) {
-			pass.setPipeline(prefilterHPipeline);
+			pass.setPipeline(compiledPrefilterH);
 			RenderSystem.bindDefaultUniforms(pass);
 			pass.setUniform(DOF_BLOCK, dofUniformBuffer);
-			pass.bindTexture("InSampler", colorView, linear);
+			pass.setUniform("InSampler", colorView, linear);
 			pass.draw(3, 1, 0, 0);
 		}
 		try (RenderPass pass = RenderSystem.getDevice().createCommandEncoder().createRenderPass(
 				() -> "realcamera dof prev", pre.getColorTextureView(), Optional.empty())) {
-			pass.setPipeline(prefilterVPipeline);
+			pass.setPipeline(compiledPrefilterV);
 			RenderSystem.bindDefaultUniforms(pass);
 			pass.setUniform(DOF_BLOCK, dofUniformBuffer);
-			pass.bindTexture("InSampler", preH.getColorTextureView(), linear);
+			pass.setUniform("InSampler", preH.getColorTextureView(), linear);
 			pass.draw(3, 1, 0, 0);
 		}
 		try (RenderPass pass = RenderSystem.getDevice().createCommandEncoder().createRenderPass(
 				() -> "realcamera dof gather", gathered.getColorTextureView(), Optional.empty())) {
-			pass.setPipeline(gatherPipeline);
+			pass.setPipeline(compiledGather);
 			RenderSystem.bindDefaultUniforms(pass);
 			pass.setUniform(DOF_BLOCK, dofUniformBuffer);
-			pass.bindTexture("MainSampler", colorView, linear);
-			pass.bindTexture("PreSampler", pre.getColorTextureView(), linear);
-			pass.bindTexture("MainDepthSampler", depthView, nearest);
+			pass.setUniform("MainSampler", colorView, linear);
+			pass.setUniform("PreSampler", pre.getColorTextureView(), linear);
+			pass.setUniform("MainDepthSampler", depthView, nearest);
 			pass.draw(3, 1, 0, 0);
 		}
 		return gathered.getColorTextureView();

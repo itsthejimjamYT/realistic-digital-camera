@@ -3,20 +3,19 @@ package com.itsthejimjam.realcamera.client;
 import java.io.File;
 
 import com.itsthejimjam.realcamera.PhotoMode;
-import com.mojang.blaze3d.GpuFormat;
+import com.mojang.renderpearl.api.GpuFormat;
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.platform.Window;
 import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.textures.GpuTexture;
-import com.mojang.blaze3d.textures.GpuTextureView;
+import com.mojang.renderpearl.api.textures.GpuTexture;
+import com.mojang.renderpearl.api.textures.GpuTextureView;
+import com.itsthejimjam.realcamera.client.mixin.WindowInvoker;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Screenshot;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.Util;
-
-import org.lwjgl.glfw.GLFW;
 
 /**
  * The shutter. On request the OS window is genuinely resized to the chosen output
@@ -299,10 +298,16 @@ public final class PhotoCapture {
 		// spoofed to the capture size).
 		savedWinW = w.getScreenWidth();
 		savedWinH = w.getScreenHeight();
-		if (w.isFullscreen()) {
+		if (w.isExclusiveFullscreen()) {
 			return;
 		}
-		GLFW.glfwSetWindowSize(w.handle(), overrideWidth(), overrideHeight());
+		// setWindowSizeAndPosition, not setWindowed: the latter unconditionally forces
+		// fullscreenRequested = false before resizing (confirmed via bytecode), which
+		// silently knocked a borderless-fullscreen session into plain windowed mode on
+		// every capture. The invoker-exposed private method is a pure SDL resize —
+		// same x/y keeps the window from also moving.
+		((WindowInvoker) (Object) w).realcamera$setWindowSizeAndPosition(
+				w.getX(), w.getY(), overrideWidth(), overrideHeight());
 	}
 
 	private static void restoreWindow() {
@@ -310,8 +315,9 @@ public final class PhotoCapture {
 			return;
 		}
 		Window w = Minecraft.getInstance().getWindow();
-		if (!w.isFullscreen()) {
-			GLFW.glfwSetWindowSize(w.handle(), savedWinW, savedWinH);
+		if (!w.isExclusiveFullscreen()) {
+			((WindowInvoker) (Object) w).realcamera$setWindowSizeAndPosition(
+					w.getX(), w.getY(), savedWinW, savedWinH);
 		}
 		savedWinW = 0;
 		savedWinH = 0;

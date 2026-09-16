@@ -24,11 +24,21 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * Adds photo mode's effect chain into the level render graph, right after the
- * transparency pass and before the "always on top" pass clears the depth buffer —
- * the only point where a post pass can still sample real scene depth. This is the
- * same seam the vanilla transparency and entity-outline chains use, so it also
- * composes correctly when a shader pack is driving the pipeline.
+ * Adds photo mode's effect chain into the level render graph, right before the frame
+ * graph actually executes — the same seam vanilla uses to add its own entity-outline
+ * post chain (confirmed by tracing {@code LevelRenderer.render()}'s bytecode: vanilla
+ * calls {@code chain.addToFrame(frame, ...)} immediately before
+ * {@code frame.execute(...)}, after every other pass — including transparency — has
+ * already been registered into the graph, so depth is still real and available here).
+ *
+ * <p>26.3 note: the OLD seam this mixin used —
+ * {@code LevelRenderer.addAlwaysOnTopPass(FrameGraphBuilder, ...)}, injected into right
+ * before that call — no longer exists as a standalone step; that logic moved inside a
+ * lambda nested in {@code addMainPass}, which isn't a stable thing to target directly.
+ * Anchoring on {@code FrameGraphBuilder.execute(...)} instead sidesteps that entirely:
+ * it's the one point every version of this render graph necessarily has, right before
+ * the graph runs, so any pass registered here executes with the same depth visibility
+ * vanilla's own post-chain passes get.
  */
 @Mixin(LevelRenderer.class)
 public class LevelPostMixin {
@@ -38,10 +48,10 @@ public class LevelPostMixin {
 	private LevelTargetBundle targets;
 
 	@Inject(
-			method = "render(Lcom/mojang/blaze3d/resource/GraphicsResourceAllocator;Lnet/minecraft/client/DeltaTracker;ZLnet/minecraft/client/renderer/state/level/CameraRenderState;Lorg/joml/Matrix4fc;Lcom/mojang/blaze3d/buffers/GpuBufferSlice;Lorg/joml/Vector4f;Z)V",
+			method = "render(Lcom/mojang/blaze3d/resource/GraphicsResourceAllocator;ZLnet/minecraft/client/renderer/state/level/CameraRenderState;Lcom/mojang/renderpearl/api/buffers/GpuBufferSlice;Lorg/joml/Vector4f;ZZ)V",
 			at = @At(
 					value = "INVOKE",
-					target = "Lnet/minecraft/client/renderer/LevelRenderer;addAlwaysOnTopPass(Lcom/mojang/blaze3d/framegraph/FrameGraphBuilder;Lnet/minecraft/client/renderer/feature/FeatureRenderDispatcher$PreparedFrame;Lcom/mojang/blaze3d/buffers/GpuBufferSlice;)V"))
+					target = "Lcom/mojang/blaze3d/framegraph/FrameGraphBuilder;execute(Lcom/mojang/blaze3d/resource/GraphicsResourceAllocator;Lcom/mojang/blaze3d/framegraph/FrameGraphBuilder$Inspector;)V"))
 	private void realcamera$addEffectChain(CallbackInfo ci, @Local FrameGraphBuilder frame) {
 		// With a shader pack active, the pack re-composites after this point and discards
 		// writes here — that case is handled by CaptureHookMixin instead.
@@ -68,7 +78,16 @@ public class LevelPostMixin {
 			AidParams.apply(chain);
 			int w = mc.gameRenderer.mainRenderTarget().width;
 			int h = mc.gameRenderer.mainRenderTarget().height;
-			chain.addToFrame(frame, w, h, this.targets);
+			try {
+				chain.addToFrame(frame, w, h, this.targets);
+			} catch (Throwable t) {
+				// This only registers the pass into the graph — if a pipeline inside it is
+				// still broken/uncompiled, the actual failure surfaces later during vanilla's
+				// own frame.execute(), outside anything this mixin can catch. Catching here
+				// still covers a synchronous failure in addToFrame itself.
+				PhotoMode.LOGGER.error("[Photo Mode] dof post chain failed to register", t);
+				return;
+			}
 			if (w == PhotoCapture.overrideWidth() && h == PhotoCapture.overrideHeight()) {
 				PhotoCapture.markChainReady();
 			}

@@ -1,7 +1,6 @@
 package com.itsthejimjam.realcamera.block;
 
 import com.itsthejimjam.realcamera.PhotoMode;
-import com.mojang.serialization.MapCodec;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -46,7 +45,6 @@ import net.minecraft.world.phys.shapes.VoxelShape;
  */
 public class TripodBlock extends BaseEntityBlock {
 
-	public static final MapCodec<TripodBlock> CODEC = simpleCodec(TripodBlock::new);
 	public static final BooleanProperty MOUNTED = BooleanProperty.create("mounted");
 	public static final EnumProperty<DoubleBlockHalf> HALF = BlockStateProperties.DOUBLE_BLOCK_HALF;
 
@@ -82,11 +80,6 @@ public class TripodBlock extends BaseEntityBlock {
 		registerDefaultState(stateDefinition.any()
 				.setValue(MOUNTED, false).setValue(BARREL, Barrel.NONE)
 				.setValue(FACING, Direction.NORTH).setValue(HALF, DoubleBlockHalf.LOWER));
-	}
-
-	@Override
-	protected MapCodec<TripodBlock> codec() {
-		return CODEC;
 	}
 
 	@Override

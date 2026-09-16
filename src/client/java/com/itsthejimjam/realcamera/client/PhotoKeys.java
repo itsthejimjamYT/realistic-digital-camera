@@ -40,7 +40,7 @@ public final class PhotoKeys {
 
 	private static KeyMapping bind(String name, int defaultKey) {
 		return KeyMappingHelper.registerKeyMapping(
-				new KeyMapping("key.realcamera." + name, InputConstants.Type.KEYSYM, defaultKey, CATEGORY));
+				new KeyMapping("key.realcamera." + name, InputConstants.Type.KEYBOARD, defaultKey, CATEGORY));
 	}
 
 	/** Called every client tick. */

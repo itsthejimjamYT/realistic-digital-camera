@@ -11,7 +11,7 @@ import com.itsthejimjam.realcamera.client.PhotoCapture;
 import com.itsthejimjam.realcamera.client.PhotoModeSession;
 import com.mojang.blaze3d.platform.Window;
 import com.mojang.blaze3d.resource.CrossFrameResourcePool;
-import com.mojang.blaze3d.textures.GpuTextureView;
+import com.mojang.renderpearl.api.textures.GpuTextureView;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.GameRenderer;
@@ -43,7 +43,7 @@ public class CaptureHookMixin {
 	private static boolean realcamera$captureLogged;
 
 	/** Before the frame renders, make the real OS window the capture size (once per shot). */
-	@Inject(method = "render(Lnet/minecraft/client/DeltaTracker;Z)V", at = @At("HEAD"))
+	@Inject(method = "render()V", at = @At("HEAD"))
 	private void realcamera$sizeWindow(CallbackInfo ci) {
 		if (PhotoModeSession.isActive() && PhotoCapture.wantsBigFrame()) {
 			PhotoCapture.ensureWindowSized();
@@ -51,7 +51,7 @@ public class CaptureHookMixin {
 	}
 
 	@Inject(
-			method = "render(Lnet/minecraft/client/DeltaTracker;Z)V",
+			method = "render()V",
 			at = @At(
 					value = "INVOKE",
 					target = "Lnet/minecraft/client/gui/render/GuiRenderer;render()V"))
@@ -157,6 +157,17 @@ public class CaptureHookMixin {
 				PhotoModeSession.setDepthViewOverride(sceneDepth);
 				try {
 					chain.process(mc.gameRenderer.mainRenderTarget(), this.resourcePool);
+				} catch (Throwable t) {
+					// getPostChain() above only catches a chain that fails to LOAD — with
+					// shader compilation now async, a chain can come back non-null and only
+					// fail once actually run here (confirmed: an uncaught exception from this
+					// exact call is what was booting the whole game back to the main menu on
+					// a bad/slow-to-compile pipeline, instead of just skipping this frame's
+					// effect like a bad chain load already does).
+					if (!PhotoModeSession.shaderPathLogged) {
+						PhotoModeSession.shaderPathLogged = true;
+						PhotoMode.LOGGER.error("[Photo Mode] dof_shaderpack post chain failed to run", t);
+					}
 				} finally {
 					PhotoModeSession.setDepthViewOverride(null);
 				}

@@ -5,8 +5,8 @@ import java.lang.reflect.Method;
 
 import com.itsthejimjam.realcamera.PhotoMode;
 import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.textures.GpuTexture;
-import com.mojang.blaze3d.textures.GpuTextureView;
+import com.mojang.renderpearl.api.textures.GpuTexture;
+import com.mojang.renderpearl.api.textures.GpuTextureView;
 
 /**
  * Reflective bridge to a shader-pack rendering pipeline. The pipeline is not a compile

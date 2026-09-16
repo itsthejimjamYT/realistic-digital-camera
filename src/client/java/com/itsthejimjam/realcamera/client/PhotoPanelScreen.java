@@ -6,6 +6,7 @@ import java.util.function.IntSupplier;
 import java.util.function.Supplier;
 
 import com.itsthejimjam.realcamera.client.config.PhotoConfig;
+import com.mojang.blaze3d.platform.InputConstants;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
@@ -484,8 +485,11 @@ public final class PhotoPanelScreen extends Screen {
 		double mx = event.x();
 		double my = event.y();
 		int top = this.height - PANEL_H;
-		boolean left = event.button() == 0;
-		boolean mid = event.button() == 2;
+		// 26.3: button codes are 1-indexed now (SDL convention, replacing GLFW's 0-indexed
+		// one — left was 0, is now InputConstants.MOUSE_BUTTON_LEFT = 1). Named constants
+		// instead of magic numbers so this doesn't silently break again the same way.
+		boolean left = event.button() == InputConstants.MOUSE_BUTTON_LEFT;
+		boolean mid = event.button() == InputConstants.MOUSE_BUTTON_MIDDLE;
 
 		Cell wasOpen = openCell;
 		if (openCell != null) {

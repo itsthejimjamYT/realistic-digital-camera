@@ -23,6 +23,7 @@
 		"PostPassInputMixin",
 		"ShutterMixin",
 		"TripodCameraMixin",
+		"WindowInvoker",
 		"WindowSizeMixin"
 	],
 	"injectors": {

@@ -1,5 +1,12 @@
 // Shared depth-of-field gather — the approved baseline (Aug 29).
 //
+// 26.3: no longer actually imported anywhere — #moj_import only works for "core"
+// shaders now, not post-processing ones, so dof.fsh and dof_shaderpack.fsh each carry
+// their own inlined copy of this (with PHOTOMODE_SHADERPACK_DEPTH baked in as either
+// present or absent, rather than #ifdef'd, since there's no shared compilation unit to
+// branch within anymore). This file is kept as the reference copy — edit it first, then
+// hand-port the change into both .fsh files.
+//
 // Circle of confusion in DIOPTRIC space (|1/here - 1/focus|) so it does not depend on
 // the absolute metre scale of the depth mapping — only the ratio matters, and the
 // magnitude is carried by BlurStrength / MaxRadiusFrac (tuned to feel). Exponential
@@ -29,9 +36,9 @@ layout(std140) uniform DofConfig {
     float OnsetMaxPx;      // reference-px blur radius at which the effect is fully on (config)
 };
 
-in vec2 texCoord;
+layout(location = 0) in vec2 texCoord;
 
-out vec4 fragColor;
+layout(location = 0) out vec4 fragColor;
 
 const float NEAR = 0.05;
 // Far enough for LOD-terrain mods (e.g. Voxy) at their maximum render

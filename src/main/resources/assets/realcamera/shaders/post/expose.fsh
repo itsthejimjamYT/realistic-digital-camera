@@ -1,4 +1,5 @@
 #version 330
+#extension GL_ARB_separate_shader_objects : require
 
 // The high-precision capture pass (see HdrCapture.java). Deliberately minimal: just the
 // two camera-accurate steps (exposure, white balance) plus a generous highlight roll-off
@@ -22,9 +23,9 @@ layout(std140) uniform ExposeConfig {
     float _pad1;
 };
 
-in vec2 texCoord;
+layout(location = 0) in vec2 texCoord;
 
-out vec4 fragColor;
+layout(location = 0) out vec4 fragColor;
 
 void main() {
     vec3 rgb = texture(InSampler, texCoord).rgb;
