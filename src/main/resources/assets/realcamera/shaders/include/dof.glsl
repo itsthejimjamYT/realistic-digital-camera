@@ -90,11 +90,41 @@ float hash12(vec2 p) {
     return fract((p3.x + p3.y) * p3.z);
 }
 
+float distAt(vec2 uv) {
+    float raw = texture(MainDepthSampler, uv).r;
+    return isSkyRaw(raw) ? FAR_CLAMP : toDist(raw);
+}
+
+// Cutout foliage (grass, leaves) writes depth in a "Swiss cheese" pattern: solid where a
+// blade/leaf sits, but showing whatever sits BEHIND it through the gaps between blades.
+// A single raw depth sample can land on either side of that pattern essentially at
+// random, so two immediately-adjacent pixels on the same leaf can read wildly different
+// distances — one correctly hits the blade, its neighbour peeks through a gap to
+// distant background — and therefore compute wildly different CoC / blur radius despite
+// belonging to the same surface. That is what turns into hard, blocky patches instead of
+// a smooth blur (confirmed 2026-09-13: reproduces on a clean profile, was previously
+// masked by another mod's rendering behaviour on a heavier modpack). Biasing toward the
+// NEAREST of a small neighbourhood pulls a gap-outlier back to the real surface, since
+// the true near hit is almost always present a texel or two away; a genuinely flat/opaque
+// surface has all samples agree already, so this is a no-op there.
+float stableDist(vec2 uv, vec2 texel) {
+    float d = distAt(uv);
+    d = min(d, distAt(uv + vec2(texel.x, 0.0)));
+    d = min(d, distAt(uv - vec2(texel.x, 0.0)));
+    d = min(d, distAt(uv + vec2(0.0, texel.y)));
+    d = min(d, distAt(uv - vec2(0.0, texel.y)));
+    return d;
+}
+
 void main() {
     vec2 res = vec2(textureSize(MainSampler, 0));
     float aspect = res.x / res.y;
     float rawHere = texture(MainDepthSampler, texCoord).r;
     vec3 sharp = texture(MainSampler, texCoord).rgb;
+    // Scales with resolution: a real-world gap between grass blades covers more pixels
+    // at a high capture resolution than it does at a small live-preview window, so the
+    // neighbourhood needs to widen to keep bridging it.
+    vec2 texel = (1.0 / res) * clamp(res.y / 1080.0, 1.0, 4.0);
 
     // If the reticle is on the sky — or on far LOD terrain that a mod
     // (e.g. Voxy) never wrote depth for, which reads identically — treat it as focusing at
@@ -102,8 +132,8 @@ void main() {
     // full blur.
     float focusRaw = texture(MainDepthSampler, FocusUV).r;
     bool  focusInf = isSkyRaw(focusRaw);
-    float focusDist = focusInf ? FAR_CLAMP : toDist(focusRaw);
-    float here = toDist(rawHere);
+    float focusDist = focusInf ? FAR_CLAMP : stableDist(FocusUV, texel);
+    float here = isSkyRaw(rawHere) ? FAR_CLAMP : stableDist(texCoord, texel);
     // "No depth" pixels (real sky, or depthless far LOD terrain) blur as if they sit at
     // the far clamp — a graduated amount that scales with how far focus is from infinity,
     // not a hard slam to the cap. Sharp when focusing at infinity.

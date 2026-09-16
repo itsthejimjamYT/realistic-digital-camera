@@ -110,6 +110,38 @@ public final class ExposureParams {
 			return;
 		}
 
+		float exposureMult = exposureMultiplier(aperture, shutterSeconds, iso, expComp, ndStops);
+
+		// Grain onset is keyed to the true ISO stops, not the weighted exposure. The ISO
+		// at which grain starts, its strength and its cell size are all user-tunable.
+		double log2 = Math.log(2.0);
+		double isoStops = Math.log(Math.max(iso, 1) / 100.0) / log2;
+		com.itsthejimjam.realcamera.client.config.PhotoConfig cfg =
+				com.itsthejimjam.realcamera.client.config.PhotoConfig.get();
+		double grainThresholdStops = Math.log(cfg.grainOnsetIso() / 100.0) / log2;
+		double gOver = (isoStops - grainThresholdStops) / GRAIN_RANGE_STOPS;
+		float grain = (float) Math.pow(Math.max(0.0, Math.min(1.0, gOver)), 1.1);
+		grain = Math.max(0.0f, Math.min(3.0f, grain * cfg.grainAmount()));
+		float grainDensity = GRAIN_DENSITY / cfg.grainSize();
+
+		float wb = whiteBalanceShift(whiteBalance);
+
+		SCRATCH.clear();
+		Std140Builder.intoBuffer(SCRATCH)
+				.putFloat(exposureMult)
+				.putFloat(grain)
+				.putFloat(grainDensity)
+				.putFloat(wb);
+		SCRATCH.rewind();
+
+		RenderSystem.getDevice().createCommandEncoder().writeToBuffer(buffer.slice(), SCRATCH);
+	}
+
+	/** The camera-accurate exposure multiplier (aperture/shutter/ISO/comp/ND, scene-light
+	 *  compensated) — factored out so the high-precision capture pass (see HdrCapture) can
+	 *  compute the exact same value without a second, drifting copy of this formula. */
+	public static float exposureMultiplier(float aperture, double shutterSeconds, int iso,
+			float expComp, float ndStops) {
 		double log2 = Math.log(2.0);
 		double apStops = -2.0 * Math.log(Math.max(aperture, 0.5f) / 2.8) / log2;
 		double shStops = Math.log(Math.max(shutterSeconds, 1e-6) / SHUTTER_BASE_S) / log2;
@@ -125,30 +157,12 @@ public final class ExposureParams {
 		// so a +2 EV frame is genuinely 4x the base exposure across the whole tonal range,
 		// not squashed by the soft shoulder.
 		double biasedEV = totalEV + PhotoCapture.bracketBiasEv() - ndStops;
-		float exposureMult = (float) (Math.pow(2.0, biasedEV) * sceneLight());
+		return (float) (Math.pow(2.0, biasedEV) * sceneLight());
+	}
 
-		// Grain onset is keyed to the true ISO stops, not the weighted exposure. The ISO
-		// at which grain starts, its strength and its cell size are all user-tunable.
-		com.itsthejimjam.realcamera.client.config.PhotoConfig cfg =
-				com.itsthejimjam.realcamera.client.config.PhotoConfig.get();
-		double grainThresholdStops = Math.log(cfg.grainOnsetIso() / 100.0) / log2;
-		double gOver = (isoStops - grainThresholdStops) / GRAIN_RANGE_STOPS;
-		float grain = (float) Math.pow(Math.max(0.0, Math.min(1.0, gOver)), 1.1);
-		grain = Math.max(0.0f, Math.min(3.0f, grain * cfg.grainAmount()));
-		float grainDensity = GRAIN_DENSITY / cfg.grainSize();
-
-		// -1..+1 packed as an R/B channel scale for the shader.
-		float wb = Math.max(-1.0f, Math.min(1.0f, whiteBalance)) * WB_STRENGTH;
-
-		SCRATCH.clear();
-		Std140Builder.intoBuffer(SCRATCH)
-				.putFloat(exposureMult)
-				.putFloat(grain)
-				.putFloat(grainDensity)
-				.putFloat(wb);
-		SCRATCH.rewind();
-
-		RenderSystem.getDevice().createCommandEncoder().writeToBuffer(buffer.slice(), SCRATCH);
+	/** -1..+1 packed as an R/B channel scale for the shader. */
+	public static float whiteBalanceShift(float whiteBalance) {
+		return Math.max(-1.0f, Math.min(1.0f, whiteBalance)) * WB_STRENGTH;
 	}
 
 	/** Make sure the FilmConfig pass is using our writable buffer. */

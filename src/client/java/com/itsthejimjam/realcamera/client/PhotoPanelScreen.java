@@ -43,6 +43,15 @@ public final class PhotoPanelScreen extends Screen {
 		void step(int dir);
 
 		void reset();
+
+		/** False to have "Reset Page" skip this cell — for a setting that reads as a
+		 *  persistent mode choice rather than "this tab's settings for this shot" (e.g.
+		 *  RAW Mode, on the Frame tab: a page reset there is about aspect/resolution/
+		 *  supersample, and shouldn't silently also turn off a capture-quality toggle).
+		 *  Middle-click reset on the cell itself is unaffected either way. */
+		default boolean includeInPageReset() {
+			return true;
+		}
 	}
 
 	private record Tab(String name, Cell[] cells) {
@@ -69,7 +78,8 @@ public final class PhotoPanelScreen extends Screen {
 	private static final int HINT_COLOR = 0xFF808080;
 	private static final int SUMMARY_COLOR = 0xFF6E6E6E;
 
-	private static final String RESET_LABEL = "RESET ALL SETTINGS";
+	private static final String RESET_PAGE_LABEL = "RESET PAGE";
+	private static final String RESET_ALL_LABEL = "RESET ALL";
 
 	/** Remembered across opens within a session. */
 	private static int activeTab = 0;
@@ -119,6 +129,9 @@ public final class PhotoPanelScreen extends Screen {
 						Bracket::framesIndex, Bracket::setFramesIndex, Bracket::stepFrames, Bracket::resetFrames),
 				listCell("EV Step", Bracket.EV_STEPS,
 						Bracket::stepIndex, Bracket::setStepIndex, Bracket::stepStep, Bracket::resetStep),
+				excludedFromPageReset(listCell("HDR Merge", PhotoConfig.HDR_MERGE_OPTIONS,
+						PhotoConfig::hdrMergeIndex, PhotoConfig::setHdrMergeIndex,
+						PhotoConfig::stepHdrMerge, PhotoConfig::resetHdrMerge)),
 		}));
 		t.add(new Tab("Recipes", new Cell[] {
 				listCell("Recipe", FilmParams.RECIPE_NAMES,
@@ -156,6 +169,9 @@ public final class PhotoPanelScreen extends Screen {
 				listCell("Supersample", Framing.SS_OPTIONS,
 						Framing::getSsIndex, Framing::setSsIndex,
 						Framing::stepSupersample, Framing::resetSupersample),
+				excludedFromPageReset(listCell("RAW Mode", PhotoConfig.TOGGLE,
+						PhotoConfig::enhancedFileIndex, PhotoConfig::setEnhancedFileIndex,
+						PhotoConfig::stepEnhancedFile, PhotoConfig::resetEnhancedFile)),
 		}));
 		t.add(new Tab("Display", new Cell[] {
 				listCell("Grid", DisplayAids.GRID_TYPES,
@@ -203,6 +219,7 @@ public final class PhotoPanelScreen extends Screen {
 					knobCell("Max Zoom", PhotoConfig.MAX_ZOOM),
 					knobCell("Wide FOV", PhotoConfig.WIDEST_FOV),
 					knobCell("Base FOV", PhotoConfig.BASE_FOV),
+					knobCell("Star Trails", PhotoConfig.STAR_TRAILS),
 			}));
 		}
 		return t.toArray(new Tab[0]);
@@ -272,8 +289,10 @@ public final class PhotoPanelScreen extends Screen {
 
 	private Cell hoveredCell = null;
 	private final int[] tabX = new int[tabs.length * 2];
-	private int resetBtnX0 = 0;
-	private int resetBtnX1 = -1;
+	private int resetPageBtnX0 = 0;
+	private int resetPageBtnX1 = -1;
+	private int resetAllBtnX0 = 0;
+	private int resetAllBtnX1 = -1;
 
 	/** Open pick-a-value list, or null. */
 	private Cell openCell = null;
@@ -503,12 +522,22 @@ public final class PhotoPanelScreen extends Screen {
 		}
 
 		if (my >= top && my < top + TABBAR_H) {
-			if (left && mx >= resetBtnX0 && mx < resetBtnX1) {
+			if (left && mx >= resetAllBtnX0 && mx < resetAllBtnX1) {
 				PhotoModeSession.resetPhotoSettings();
 				Framing.resetOutput();
 				DisplayAids.resetAll();
 				CameraSounds.resetClick();
 				announce("All settings reset");
+				return true;
+			}
+			if (left && mx >= resetPageBtnX0 && mx < resetPageBtnX1) {
+				for (Cell c : currentCells()) {
+					if (c.includeInPageReset()) {
+						c.reset();
+					}
+				}
+				CameraSounds.resetClick();
+				announce(tabs[activeTab].name() + " reset");
 				return true;
 			}
 			for (int i = 0; i < tabs.length; i++) {
@@ -575,13 +604,21 @@ public final class PhotoPanelScreen extends Screen {
 			tx += w + 18;
 		}
 
-		int rlw = font.width(RESET_LABEL);
-		int rlx = this.width - rlw - 10;
-		boolean resetHot = mouseX >= rlx - 4 && mouseX < this.width - 6
+		int ralw = font.width(RESET_ALL_LABEL);
+		int ralx = this.width - ralw - 10;
+		boolean resetAllHot = mouseX >= ralx - 4 && mouseX < this.width - 6
 				&& mouseY >= top && mouseY < top + TABBAR_H;
-		graphics.text(font, RESET_LABEL, rlx, top + 5, resetHot ? ACCENT : TAB_DIM, false);
-		resetBtnX0 = rlx - 4;
-		resetBtnX1 = this.width - 6;
+		graphics.text(font, RESET_ALL_LABEL, ralx, top + 5, resetAllHot ? ACCENT : TAB_DIM, false);
+		resetAllBtnX0 = ralx - 4;
+		resetAllBtnX1 = this.width - 6;
+
+		int rplw = font.width(RESET_PAGE_LABEL);
+		int rplx = ralx - rplw - 14;
+		boolean resetPageHot = mouseX >= rplx - 4 && mouseX < ralx - 8
+				&& mouseY >= top && mouseY < top + TABBAR_H;
+		graphics.text(font, RESET_PAGE_LABEL, rplx, top + 5, resetPageHot ? ACCENT : TAB_DIM, false);
+		resetPageBtnX0 = rplx - 4;
+		resetPageBtnX1 = ralx - 8;
 
 		// --- at-a-glance settings, on its own line just above the panel ---
 		String summary = summaryLine();
@@ -817,6 +854,51 @@ public final class PhotoPanelScreen extends Screen {
 			IntConsumer select, IntConsumer step, Runnable reset) {
 		return cell(label, () -> options[Mth.clamp(index.getAsInt(), 0, options.length - 1)],
 				options, index, select, step, reset);
+	}
+
+	/** Wraps a cell so "Reset Page" skips it (see {@link Cell#includeInPageReset}). */
+	private static Cell excludedFromPageReset(Cell c) {
+		return new Cell() {
+			@Override
+			public String label() {
+				return c.label();
+			}
+
+			@Override
+			public String value() {
+				return c.value();
+			}
+
+			@Override
+			public String[] options() {
+				return c.options();
+			}
+
+			@Override
+			public int index() {
+				return c.index();
+			}
+
+			@Override
+			public void select(int i) {
+				c.select(i);
+			}
+
+			@Override
+			public void step(int dir) {
+				c.step(dir);
+			}
+
+			@Override
+			public void reset() {
+				c.reset();
+			}
+
+			@Override
+			public boolean includeInPageReset() {
+				return false;
+			}
+		};
 	}
 
 	/** A cell backed by a {@link PhotoConfig.Knob} (live tuning value). */

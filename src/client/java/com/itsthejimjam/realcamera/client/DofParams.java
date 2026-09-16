@@ -55,6 +55,35 @@ public final class DofParams {
 			return;
 		}
 
+		DofConfigValues v = compute(aperture, focusU, focusV);
+
+		SCRATCH.clear();
+		Std140Builder.intoBuffer(SCRATCH)
+				.putFloat(v.blurStrength())
+				.putFloat(v.maxRadius())
+				.putVec2(v.focusU(), v.focusV())
+				.putFloat(v.farBlurGain())
+				.putFloat(v.softKnee())
+				.putFloat(v.hlBoost())
+				.putFloat(v.hlThreshold())
+				.putFloat(v.onsetMaxPx())
+				.putFloat(0.0f)   // pad to 48 (std140 rounds the block up to 16)
+				.putFloat(0.0f)
+				.putFloat(0.0f);
+		SCRATCH.rewind();
+
+		RenderSystem.getDevice().createCommandEncoder().writeToBuffer(buffer.slice(), SCRATCH);
+	}
+
+	/** Every field of the {@code DofConfig} uniform block, in layout order. */
+	public record DofConfigValues(float blurStrength, float maxRadius, float focusU, float focusV,
+			float farBlurGain, float softKnee, float hlBoost, float hlThreshold, float onsetMaxPx) {
+	}
+
+	/** The live DoF settings, computed once — factored out so the high-precision capture
+	 *  path (see HdrCapture) can reproduce the exact same blur instead of a second,
+	 *  drifting copy of this formula. Same idea as {@link ExposureParams#exposureMultiplier}. */
+	public static DofConfigValues compute(float aperture, float focusU, float focusV) {
 		com.itsthejimjam.realcamera.client.config.PhotoConfig cfg =
 				com.itsthejimjam.realcamera.client.config.PhotoConfig.get();
 
@@ -113,22 +142,9 @@ public final class DofParams {
 			focusRemapLogged = false;
 		}
 
-		SCRATCH.clear();
-		Std140Builder.intoBuffer(SCRATCH)
-				.putFloat(blurStrength)
-				.putFloat(maxRadius)
-				.putVec2(fu, fv)
-				.putFloat(cfg.backgroundBlurGain())
-				.putFloat(cfg.focusTransitionSoftness())
-				.putFloat(cfg.highlightBloom())
-				.putFloat(cfg.highlightThreshold())
-				.putFloat(cfg.blurOnsetPixels())
-				.putFloat(0.0f)   // pad to 48 (std140 rounds the block up to 16)
-				.putFloat(0.0f)
-				.putFloat(0.0f);
-		SCRATCH.rewind();
-
-		RenderSystem.getDevice().createCommandEncoder().writeToBuffer(buffer.slice(), SCRATCH);
+		return new DofConfigValues(blurStrength, maxRadius, fu, fv, cfg.backgroundBlurGain(),
+				cfg.focusTransitionSoftness(), cfg.highlightBloom(), cfg.highlightThreshold(),
+				cfg.blurOnsetPixels());
 	}
 
 	/** Make sure the DofConfig passes are using our writable buffer. */

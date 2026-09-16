@@ -819,6 +819,27 @@ public final class PhotoModeSession {
 		}
 	}
 
+	/** Advance the (already-frozen) world by exactly this many ticks, then stop — the
+	 *  same deterministic mechanism behind vanilla's {@code /tick step}. Long exposure
+	 *  uses this per sub-frame instead of a continuous boosted tick rate so the amount
+	 *  of game-time (and therefore sky/star rotation) covered by the shot depends only
+	 *  on shutter speed, never on how long a sub-frame's render/readback happens to take
+	 *  in real time. */
+	public static void stepWorldTicks(int ticks) {
+		Minecraft mc = Minecraft.getInstance();
+		if (mc.getSingleplayerServer() != null) {
+			mc.getSingleplayerServer().execute(
+					() -> mc.getSingleplayerServer().tickRateManager().setFrozenTicksToRun(ticks));
+		}
+	}
+
+	/** True while the server is still working through a {@link #stepWorldTicks} request. */
+	public static boolean isWorldStepping() {
+		Minecraft mc = Minecraft.getInstance();
+		return mc.getSingleplayerServer() != null
+				&& mc.getSingleplayerServer().tickRateManager().frozenTicksToRun() > 0;
+	}
+
 	private PhotoModeSession() {
 	}
 

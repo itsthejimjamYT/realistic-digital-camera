@@ -5,6 +5,7 @@ import com.itsthejimjam.realcamera.client.AidParams;
 import com.itsthejimjam.realcamera.client.DofParams;
 import com.itsthejimjam.realcamera.client.ExposureParams;
 import com.itsthejimjam.realcamera.client.FilmParams;
+import com.itsthejimjam.realcamera.client.HdrCapture;
 import com.itsthejimjam.realcamera.client.ShaderPackCompat;
 import com.itsthejimjam.realcamera.client.PhotoCapture;
 import com.itsthejimjam.realcamera.client.PhotoModeSession;
@@ -118,6 +119,41 @@ public class CaptureHookMixin {
 				FilmParams.apply(chain, PhotoModeSession.getRecipeIndex(), PhotoModeSession.getRecipeStrength(),
 						PhotoModeSession.filterPolar(), PhotoModeSession.filterMist());
 				AidParams.apply(chain);
+				if ((PhotoCapture.wantsEnhancedFile() || PhotoCapture.wantsHdrMerge())
+						&& mw == PhotoCapture.overrideWidth() && mh == PhotoCapture.overrideHeight()) {
+					// Must run BEFORE chain.process() below overwrites mainRenderTarget with
+					// the graded result — this is the last point in the frame where it's
+					// still the pristine, ungraded scene. Also gated on the framebuffer
+					// having actually reached the final target size (same condition
+					// markChainReady() below already uses) — this fires on every frame
+					// while capturing, including the several real frames the window spends
+					// ramping up toward the target resolution beforehand, and without this
+					// check the RGBA16F scratch texture would get destroyed and reallocated
+					// at each intermediate size along the way instead of once at the final
+					// size.
+					//
+					// DoF is reproduced via HdrCapture's own private passes (see its class doc)
+					// using the same sceneDepth this frame already resolved for the live
+					// chain just below — NOT via the live chain's own "swap" output, which
+					// is what previously caused repeated crashes when tried.
+					//
+					// Colour source: the live grade chain doesn't always read the raw render
+					// target either — during a long exposure's develop phase it's redirected
+					// to the CPU-stacked result via colorViewOverride() (see
+					// PostPassInputMixin). Resolving the same override here means the enhanced
+					// file and the normal photo are always looking at the same data.
+					GpuTextureView colorOverride = PhotoModeSession.colorViewOverride();
+					GpuTextureView colorSource = colorOverride != null
+							? colorOverride
+							: mc.gameRenderer.mainRenderTarget().getColorTextureView();
+					HdrCapture.capture(colorSource, mw, mh, sceneDepth,
+							ExposureParams.exposureMultiplier(PhotoModeSession.getAperture(),
+									PhotoModeSession.getShutterSeconds(), PhotoModeSession.getIso(),
+									PhotoModeSession.getExposureComp(), PhotoModeSession.filterNd()),
+							ExposureParams.whiteBalanceShift(PhotoModeSession.getWhiteBalance()),
+							PhotoModeSession.getAperture(), PhotoModeSession.getFocusU(),
+							PhotoModeSession.getFocusV());
+				}
 				PhotoModeSession.setDepthViewOverride(sceneDepth);
 				try {
 					chain.process(mc.gameRenderer.mainRenderTarget(), this.resourcePool);
