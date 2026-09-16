@@ -1,6 +1,11 @@
 # Realistic Digital Camera
 
-A Fabric mod that adds a **fully functional digital camera** to Minecraft (CURRENTLY ONLY VERSION 26.2)
+A Fabric mod that adds a **fully functional digital camera** to Minecraft.
+
+> **This branch (`26.3`) targets Minecraft 26.3.** Playing 26.2? Switch to the
+> [`main-26.2`](../../tree/main-26.2) branch instead — the install steps below are
+> branch-specific.
+
 Pick an exposure mode, dial in aperture / shutter / ISO (or let the
 camera do it), fit a lens and a filter, choose your focus point, and take a shot that
 renders real optical depth of field. Every photo is written out as a PNG on your PC.
@@ -98,12 +103,14 @@ etc.) — the mod does **not** merge them. Combine them yourself in an HDR / pho
 
 ## Install
 
-1. Install [Fabric Loader](https://fabricmc.net/use/installer/) for Minecraft 26.2.
-2. Download the mod `.jar` from the [Releases](../../releases) page.
-3. Drop it, along with [Fabric API](https://modrinth.com/mod/fabric-api), into your
-   `mods/` folder.
+1. Install [Fabric Loader](https://fabricmc.net/use/installer/) for Minecraft 26.3.
+2. Check the [Releases](../../releases) page for a build tagged 26.3. If there isn't one
+   yet, build the jar yourself from this branch — see **Building** below.
+3. Drop it, along with [Fabric API](https://modrinth.com/mod/fabric-api) for 26.3, into
+   your `mods/` folder.
 4. Optional: **Mod Menu** + **Cloth Config** for the in-game settings screen, and **JEI**
-   for the Camera Workbench recipes.
+   for the Camera Workbench recipes (JEI's 26.3 build may still be pending — check its
+   own releases page).
 
 ## Controls
 
