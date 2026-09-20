@@ -134,8 +134,9 @@ public final class PhotoCapture {
 			// say so, rather than silently not producing the second file.
 			Minecraft mc = Minecraft.getInstance();
 			if (mc.player != null) {
-				mc.player.sendOverlayMessage(Component.literal(
-						"RAW mode skipped — over the " + ENHANCED_MAX_EDGE + "px cap for now"));
+				mc.player.sendOverlayMessage(Component.literal(ShaderPackCompat.shaderPackActive()
+						? "RAW mode skipped — over the " + ENHANCED_MAX_EDGE + "px cap for now"
+						: "RAW mode needs a shader pack — skipped"));
 			}
 		}
 	}
@@ -194,6 +195,12 @@ public final class PhotoCapture {
 				|| bracketEvs != null) {
 			return false;
 		}
+		// HdrCapture.capture() is only ever driven from the shader-pack path (see
+		// CaptureHookMixin) — without a shader pack nothing ever fills its target, so
+		// promising a RAW file here would silently produce nothing.
+		if (!ShaderPackCompat.shaderPackActive()) {
+			return false;
+		}
 		return Math.max(overrideWidth(), overrideHeight()) <= ENHANCED_MAX_EDGE;
 	}
 
@@ -207,6 +214,12 @@ public final class PhotoCapture {
 		}
 		if (!wantsBigFrame() || !com.itsthejimjam.realcamera.client.config.PhotoConfig.get().autoMergeHdr
 				|| bracketEvs == null) {
+			return false;
+		}
+		// Same reason as wantsEnhancedFile(): with no shader pack there's never any HDR data
+		// to merge, and saveBracketFrame() skips the normal JPEGs whenever this is true — so
+		// without this check a bracket taken without a shader pack saved nothing at all.
+		if (!ShaderPackCompat.shaderPackActive()) {
 			return false;
 		}
 		return Math.max(overrideWidth(), overrideHeight()) <= ENHANCED_MAX_EDGE;
@@ -277,7 +290,7 @@ public final class PhotoCapture {
 	private static int effectiveSupersampleForCapture() {
 		com.itsthejimjam.realcamera.client.config.PhotoConfig cfg =
 				com.itsthejimjam.realcamera.client.config.PhotoConfig.get();
-		if (cfg.saveEnhancedFile || (cfg.autoMergeHdr && Bracket.on())) {
+		if ((cfg.saveEnhancedFile || (cfg.autoMergeHdr && Bracket.on())) && ShaderPackCompat.shaderPackActive()) {
 			return 1;
 		}
 		return Framing.effectiveSupersample();
