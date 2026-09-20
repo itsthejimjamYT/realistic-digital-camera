@@ -2,9 +2,10 @@
 
 A Fabric mod that adds a **fully functional digital camera** to Minecraft.
 
-> **This branch (`26.3`) targets Minecraft 26.3.** Playing 26.2? Switch to the
-> [`main-26.2`](../../tree/main-26.2) branch instead — the install steps below are
-> branch-specific.
+> **This branch (`26.3`) targets Minecraft 26.3.** Playing a different version? Switch to
+> the [`main-26.2`](../../tree/main-26.2) or [`1.20.4`](../../tree/1.20.4) branch instead —
+> the install steps below are branch-specific. (Versions before 26.2, such as 1.20.4, need
+> an Iris shader pack for depth of field.)
 
 Pick an exposure mode, dial in aperture / shutter / ISO (or let the
 camera do it), fit a lens and a filter, choose your focus point, and take a shot that
@@ -30,7 +31,8 @@ renders real optical depth of field. Every photo is written out as a PNG on your
   lens is fitted and points the way you were facing when you set it down.
 - **Composition aids** — aspect-ratio framing guides, rule-of-thirds / golden / centre
   grids, a focus-peaking and clipping-warning overlay.
-- **Output** — up to 8K, with up to 4× supersampling, long exposure, and exposure bracketing.
+- **Output** — up to 8K, with up to 4× supersampling, long exposure, exposure bracketing
+  with in-mod HDR merge, and an optional 16-bit RAW mode.
 
 ## Crafting
 
@@ -97,9 +99,13 @@ C:\Users\<you>\AppData\Roaming\.minecraft\photos\
 If you run a custom launcher (Modrinth App, Prism, MultiMC, …), it's the `photos` folder
 inside that instance / profile's game folder instead.
 
-**Bracketing** saves each exposure as its own separate file (`..._BRACKET_1of3_...`,
-etc.) — the mod does **not** merge them. Combine them yourself in an HDR / photo editor
-(Lightroom, Photoshop, Darktable, …).
+**Bracketing** is merged into one 16-bit HDR file (`..._HDR.png`) by default. Set **HDR
+Merge** to *Save Each* to get every exposure as its own JPEG with real EXIF
+(`..._BRACKET_1of3_...`) and combine them yourself in an HDR / photo editor (Lightroom,
+Photoshop, Darktable, …).
+
+**RAW mode** (Frame tab) additionally saves a 16-bit `..._enhanced.png` next to each
+photo, without the camera's contrast and grade baked in, for more room to edit.
 
 ## Install
 
