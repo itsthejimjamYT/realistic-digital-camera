@@ -6,7 +6,7 @@ import com.mojang.blaze3d.platform.NativeImage;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Screenshot;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.GuiGraphics;
 
 /**
  * Live histogram for the viewfinder. Every so often (the scene is frozen, so a few
@@ -36,7 +36,6 @@ public final class Histogram {
 	private static final float METER_TARGET = 0.45f;
 
 	private static int frame = 0;
-	private static volatile boolean busy = false;
 
 	private Histogram() {
 	}
@@ -64,32 +63,31 @@ public final class Histogram {
 		return meterHasData;
 	}
 
-	/** Called at the end of the frame while photo mode is active and not capturing. */
+	/** Called at the end of the frame while photo mode is active and not capturing.
+	 *  1.20.4's {@code Screenshot.takeScreenshot} is synchronous (no downscale factor,
+	 *  no callback — unlike 26.2's async version), so this reads back and computes
+	 *  in-place rather than handing off to a callback. */
 	public static void maybeSample(RenderTarget target) {
 		// Sample when the histogram or light meter is shown, and always when the
 		// exposure driver is live (an auto shooting mode, or Auto ISO).
 		boolean needed = DisplayAids.histogramOn() || DisplayAids.meterOn()
 				|| PhotoModeSession.shootModeIndex() != 3 || PhotoModeSession.isoAuto();
-		if (target == null || busy || PhotoCapture.wantsBigFrame() || !needed) {
+		if (target == null || PhotoCapture.wantsBigFrame() || !needed) {
 			return;
 		}
 		if (frame++ % SAMPLE_EVERY_FRAMES != 0) {
 			return;
 		}
-		busy = true;
+		NativeImage image = null;
 		try {
-			Screenshot.takeScreenshot(target, 1, image -> {
-				try {
-					compute(image);
-				} catch (Throwable t) {
-					PhotoMode.LOGGER.warn("[Photo Mode] histogram compute failed: {}", t.toString());
-				} finally {
-					image.close();
-					busy = false;
-				}
-			});
+			image = Screenshot.takeScreenshot(target);
+			compute(image);
 		} catch (Throwable t) {
-			busy = false;
+			PhotoMode.LOGGER.warn("[Photo Mode] histogram compute failed: {}", t.toString());
+		} finally {
+			if (image != null) {
+				image.close();
+			}
 		}
 	}
 
@@ -117,7 +115,7 @@ public final class Histogram {
 		double weightTotal = 0.0;
 		for (int y = 0; y < h; y += PIXEL_STRIDE) {
 			for (int x = 0; x < w; x += PIXEL_STRIDE) {
-				int p = image.getPixel(x, y);
+				int p = image.getPixelRGBA(x, y);
 				int r = (p >> 16) & 0xFF;
 				int g = (p >> 8) & 0xFF;
 				int b = p & 0xFF;
@@ -195,16 +193,16 @@ public final class Histogram {
 		return (int) Math.round(Math.sqrt((double) count / max) * span);
 	}
 
-	public static void draw(GuiGraphicsExtractor graphics, int x, int y) {
+	public static void draw(GuiGraphics graphics, int x, int y) {
 		drawScaled(graphics, x, y, BINS, height());
 	}
 
 	/** Smaller build for a pinned overlay corner (tight aspect ratios). */
-	public static void drawCompact(GuiGraphicsExtractor graphics, int x, int y) {
+	public static void drawCompact(GuiGraphics graphics, int x, int y) {
 		drawScaled(graphics, x, y, COMPACT_COLS, compactHeight());
 	}
 
-	private static synchronized void drawScaled(GuiGraphicsExtractor graphics, int x, int y, int cols, int h) {
+	private static synchronized void drawScaled(GuiGraphics graphics, int x, int y, int cols, int h) {
 		int w = cols + 10;
 		graphics.fill(x, y, x + w, y + h, DisplayAids.fade(0xC8000000));
 		graphics.fill(x, y, x + w, y + 1, DisplayAids.fade(0x40FFFFFF));
@@ -214,12 +212,12 @@ public final class Histogram {
 		int bottom = y + h - 4;
 		int span = bottom - plotTop;
 
-		graphics.text(Minecraft.getInstance().font,
+		graphics.drawString(Minecraft.getInstance().font,
 				DisplayAids.histogramMode() == 2 ? "LUMA" : "RGB", x + 5, y + 3, DisplayAids.fade(0xFF909090), false);
 
 		graphics.fill(x + 5, bottom, x + 5 + cols, bottom + 1, DisplayAids.fade(0x33FFFFFF));
 		for (int q = 1; q < 4; q++) {
-			graphics.verticalLine(x + 5 + q * cols / 4, plotTop, bottom, DisplayAids.fade(0x18FFFFFF));
+			graphics.vLine(x + 5 + q * cols / 4, plotTop, bottom, DisplayAids.fade(0x18FFFFFF));
 		}
 		if (!hasData) {
 			return;
@@ -241,11 +239,11 @@ public final class Histogram {
 			}
 			int bx = x + 5 + c;
 			if (luma) {
-				graphics.verticalLine(bx, bottom, bottom - barHeight(l, maxLum, span), DisplayAids.fade(0xE0FFFFFF));
+				graphics.vLine(bx, bottom - barHeight(l, maxLum, span), bottom, DisplayAids.fade(0xE0FFFFFF));
 			} else {
-				graphics.verticalLine(bx, bottom, bottom - barHeight(b, maxRgb, span), DisplayAids.fade(0x907090FF));
-				graphics.verticalLine(bx, bottom, bottom - barHeight(g, maxRgb, span), DisplayAids.fade(0x9070FF70));
-				graphics.verticalLine(bx, bottom, bottom - barHeight(r, maxRgb, span), DisplayAids.fade(0x90FF7070));
+				graphics.vLine(bx, bottom - barHeight(b, maxRgb, span), bottom, DisplayAids.fade(0x907090FF));
+				graphics.vLine(bx, bottom - barHeight(g, maxRgb, span), bottom, DisplayAids.fade(0x9070FF70));
+				graphics.vLine(bx, bottom - barHeight(r, maxRgb, span), bottom, DisplayAids.fade(0x90FF7070));
 			}
 		}
 	}

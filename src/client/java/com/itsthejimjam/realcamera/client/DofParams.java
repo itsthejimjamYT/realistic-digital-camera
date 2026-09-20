@@ -1,40 +1,33 @@
 package com.itsthejimjam.realcamera.client;
 
-import java.nio.ByteBuffer;
-import java.util.Map;
+import java.util.List;
 
 import com.itsthejimjam.realcamera.PhotoMode;
 import com.itsthejimjam.realcamera.client.mixin.PostChainAccessor;
-import com.itsthejimjam.realcamera.client.mixin.PostPassAccessor;
-import com.mojang.blaze3d.buffers.GpuBuffer;
-import com.mojang.blaze3d.buffers.Std140Builder;
 import com.mojang.blaze3d.platform.Window;
-import com.mojang.blaze3d.systems.RenderSystem;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.EffectInstance;
 import net.minecraft.client.renderer.PostChain;
 import net.minecraft.client.renderer.PostPass;
 
-import org.lwjgl.system.MemoryUtil;
-
 /**
- * Pushes live depth-of-field settings into the {@code DofConfig} uniform block of a
- * loaded post chain, so aperture / focal length / focus point can change without
- * rebuilding the chain.
- *
- * <p>The pass's own uniform buffer isn't a valid copy target, so on first use we swap
- * in our own writable buffer and rewrite it each frame.
+ * Pushes live depth-of-field settings into the {@code dof} (or {@code dof_shaderpack})
+ * pass's shader uniforms each frame, so aperture / focal length / focus point can change
+ * without rebuilding the chain.
  *
  * <p>The circle of confusion is dioptric (scale-tolerant); this class only supplies the
  * ramp rate ({@code BlurStrength}) and the peak blur radius ({@code MaxRadiusFrac}).
  * Longer focal length and wider aperture raise both; an ultra-wide lens collapses the
  * radius toward zero so almost everything stays in focus, like a real lens.
+ *
+ * <p>1.20.4 has no {@code GpuBuffer}/std140 uniform-buffer system — every uniform is set
+ * directly via {@code EffectInstance.getUniform(name).set(...)} on each pass's own
+ * shader, found through {@link PostChainAccessor} (no buffer-swap "ensure" step needed).
+ * {@code MaxRadiusFrac} is shared by three passes (the two pre-blurs and the DoF gather
+ * itself), so it's set on all three.
  */
 public final class DofParams {
-	private static final String BLOCK = "DofConfig";
-	/** std140: float + float + vec2 + 5 float, rounded up to a multiple of 16 = 48 bytes. */
-	private static final int SIZE = 48;
-	private static final ByteBuffer SCRATCH = MemoryUtil.memAlloc(SIZE);
 
 	/** focalFactor of the 70 deg base lens: 1 / tan(35 deg). ratio is measured against this. */
 	private static final float REF_FOCAL = 1.428f;
@@ -44,46 +37,17 @@ public final class DofParams {
 	private static final double WIDE_FALLOFF_EXP = 2.3; // how fast bokeh collapses below the base lens
 	private static final float TELE_SLOPE = 0.7f;       // sub-linear growth above the base lens
 
-	private static GpuBuffer buffer;
 	private static boolean focusRemapLogged = false;
 
 	private DofParams() {
 	}
 
 	public static void apply(PostChain chain, float aperture, float focusU, float focusV) {
-		if (!ensureBuffer(chain)) {
+		List<PostPass> passes = passes(chain);
+		if (passes == null || passes.size() < 4) {
 			return;
 		}
 
-		DofConfigValues v = compute(aperture, focusU, focusV);
-
-		SCRATCH.clear();
-		Std140Builder.intoBuffer(SCRATCH)
-				.putFloat(v.blurStrength())
-				.putFloat(v.maxRadius())
-				.putVec2(v.focusU(), v.focusV())
-				.putFloat(v.farBlurGain())
-				.putFloat(v.softKnee())
-				.putFloat(v.hlBoost())
-				.putFloat(v.hlThreshold())
-				.putFloat(v.onsetMaxPx())
-				.putFloat(0.0f)   // pad to 48 (std140 rounds the block up to 16)
-				.putFloat(0.0f)
-				.putFloat(0.0f);
-		SCRATCH.rewind();
-
-		RenderSystem.getDevice().createCommandEncoder().writeToBuffer(buffer.slice(), SCRATCH);
-	}
-
-	/** Every field of the {@code DofConfig} uniform block, in layout order. */
-	public record DofConfigValues(float blurStrength, float maxRadius, float focusU, float focusV,
-			float farBlurGain, float softKnee, float hlBoost, float hlThreshold, float onsetMaxPx) {
-	}
-
-	/** The live DoF settings, computed once — factored out so the high-precision capture
-	 *  path (see HdrCapture) can reproduce the exact same blur instead of a second,
-	 *  drifting copy of this formula. Same idea as {@link ExposureParams#exposureMultiplier}. */
-	public static DofConfigValues compute(float aperture, float focusU, float focusV) {
 		com.itsthejimjam.realcamera.client.config.PhotoConfig cfg =
 				com.itsthejimjam.realcamera.client.config.PhotoConfig.get();
 
@@ -142,38 +106,37 @@ public final class DofParams {
 			focusRemapLogged = false;
 		}
 
-		return new DofConfigValues(blurStrength, maxRadius, fu, fv, cfg.backgroundBlurGain(),
-				cfg.focusTransitionSoftness(), cfg.highlightBloom(), cfg.highlightThreshold(),
-				cfg.blurOnsetPixels());
+		// prefilterh, prefilterv — only need the shared blur radius.
+		setUniform(passes.get(0), "MaxRadiusFrac", maxRadius);
+		setUniform(passes.get(1), "MaxRadiusFrac", maxRadius);
+
+		// dof / dof_shaderpack — the full config.
+		EffectInstance dof = passes.get(2).getEffect();
+		if (dof != null) {
+			dof.safeGetUniform("BlurStrength").set(blurStrength);
+			dof.safeGetUniform("MaxRadiusFrac").set(maxRadius);
+			dof.safeGetUniform("FocusUV").set(fu, fv);
+			dof.safeGetUniform("FarBlurGain").set(cfg.backgroundBlurGain());
+			dof.safeGetUniform("SoftKnee").set(cfg.focusTransitionSoftness());
+			dof.safeGetUniform("HlBoost").set(cfg.highlightBloom());
+			dof.safeGetUniform("HlThreshold").set(cfg.highlightThreshold());
+			dof.safeGetUniform("OnsetMaxPx").set(cfg.blurOnsetPixels());
+		}
 	}
 
-	/** Make sure the DofConfig passes are using our writable buffer. */
-	private static boolean ensureBuffer(PostChain chain) {
-		boolean any = false;
-		try {
-			for (PostPass pass : ((PostChainAccessor) chain).realcamera$passes()) {
-				Map<String, GpuBuffer> uniforms = ((PostPassAccessor) pass).realcamera$customUniforms();
-				GpuBuffer current = uniforms.get(BLOCK);
-				if (current == null) {
-					continue;
-				}
-				if (current == buffer) {
-					any = true;
-					continue;
-				}
-				if (buffer == null) {
-					buffer = RenderSystem.getDevice().createBuffer(
-							() -> "realcamera DofConfig",
-							GpuBuffer.USAGE_UNIFORM | GpuBuffer.USAGE_COPY_DST,
-							(long) SIZE);
-				}
-				uniforms.put(BLOCK, buffer);
-				current.close();
-				any = true;
-			}
-		} catch (Throwable t) {
-			PhotoMode.LOGGER.warn("[Photo Mode] DoF uniform setup failed: {}", t.toString());
+	private static void setUniform(PostPass pass, String name, float value) {
+		EffectInstance effect = pass.getEffect();
+		if (effect != null) {
+			effect.safeGetUniform(name).set(value);
 		}
-		return any;
+	}
+
+	private static List<PostPass> passes(PostChain chain) {
+		try {
+			return ((PostChainAccessor) chain).realcamera$passes();
+		} catch (Throwable t) {
+			PhotoMode.LOGGER.warn("[Photo Mode] DoF pass lookup failed: {}", t.toString());
+			return null;
+		}
 	}
 }

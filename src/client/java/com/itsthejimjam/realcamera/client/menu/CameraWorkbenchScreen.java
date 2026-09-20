@@ -2,7 +2,7 @@ package com.itsthejimjam.realcamera.client.menu;
 
 import com.itsthejimjam.realcamera.menu.WorkbenchMenu;
 
-import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.player.Inventory;
@@ -20,14 +20,15 @@ public class CameraWorkbenchScreen extends AbstractContainerScreen<WorkbenchMenu
 	private static final int H = WorkbenchMenu.INV_Y + 3 * 18 + 4 + 18 + 8;
 
 	public CameraWorkbenchScreen(WorkbenchMenu menu, Inventory inv, Component title) {
-		super(menu, inv, title, W, H);
+		super(menu, inv, title);
+		this.imageWidth = W;
+		this.imageHeight = H;
 		this.inventoryLabelY = WorkbenchMenu.INV_Y - 12;
 		this.titleLabelX = WorkbenchMenu.GRID_X;
 	}
 
 	@Override
-	public void extractBackground(GuiGraphicsExtractor g, int mouseX, int mouseY, float partialTick) {
-		super.extractBackground(g, mouseX, mouseY, partialTick);
+	protected void renderBg(GuiGraphics g, float partialTick, int mouseX, int mouseY) {
 		int x = this.leftPos;
 		int y = this.topPos;
 		g.fill(x - 1, y - 1, x + this.imageWidth + 1, y + this.imageHeight + 1, BORDER);
@@ -55,7 +56,7 @@ public class CameraWorkbenchScreen extends AbstractContainerScreen<WorkbenchMenu
 		}
 	}
 
-	private static void slotBox(GuiGraphicsExtractor g, int sx, int sy) {
+	private static void slotBox(GuiGraphics g, int sx, int sy) {
 		g.fill(sx - 1, sy - 1, sx + 17, sy + 17, SLOT_EDGE);
 		g.fill(sx, sy, sx + 16, sy + 16, SLOT_BG);
 	}

@@ -7,7 +7,7 @@ import com.mojang.authlib.GameProfile;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.AbstractClientPlayer;
-import net.minecraft.client.player.ClientInput;
+import net.minecraft.client.player.Input;
 import net.minecraft.client.player.KeyboardInput;
 import net.minecraft.core.BlockPos;
 import net.minecraft.util.Mth;
@@ -27,7 +27,7 @@ public class FreeCameraEntity extends AbstractClientPlayer {
 	private static final double DIAGONAL = Mth.sin((float) Math.toRadians(45.0));
 
 	/** Reads the real keyboard so WASD / space / shift move the camera. */
-	public ClientInput input;
+	public Input input;
 
 	/** Fixed negative id so it never collides with real (positive) entity ids. */
 	private static final int CAMERA_ENTITY_ID = -8266;
@@ -48,7 +48,7 @@ public class FreeCameraEntity extends AbstractClientPlayer {
 
 	/** Place the camera where the player is looking from, as the starting shot. */
 	public void copyFrom(Entity entity) {
-		this.snapTo(entity.getX(), entity.getEyeY(), entity.getZ(), entity.getYRot(), entity.getXRot());
+		this.moveTo(entity.getX(), entity.getEyeY(), entity.getZ(), entity.getYRot(), entity.getXRot());
 		this.setYRot(entity.getYRot());
 		this.setXRot(entity.getXRot());
 		syncOld();
@@ -56,7 +56,7 @@ public class FreeCameraEntity extends AbstractClientPlayer {
 
 	/** Snap to an explicit position + rotation without an interpolation jump. */
 	public void placeAt(double x, double y, double z, float yaw, float pitch) {
-		this.snapTo(x, y, z, yaw, pitch);
+		this.moveTo(x, y, z, yaw, pitch);
 		this.setYRot(yaw);
 		this.setXRot(pitch);
 		syncOld();
@@ -64,24 +64,25 @@ public class FreeCameraEntity extends AbstractClientPlayer {
 
 	/** Called once per client tick while photo mode is active. Speeds are blocks/tick. */
 	public void driveTick(double horizontalSpeed, double verticalSpeed) {
-		this.input.tick();
+		this.input.tick(false, 1.0f);
 		syncOld();
 
 		float yaw = this.getYRot();
 		Vec3 forward = Vec3.directionFromRotation(0.0F, yaw);
 		Vec3 side = Vec3.directionFromRotation(0.0F, yaw + 90.0F);
 
+		boolean sprinting = Minecraft.getInstance().options.keySprint.isDown();
 		double vx = 0.0, vy = 0.0, vz = 0.0;
-		double h = horizontalSpeed * (this.input.keyPresses.sprint() ? 2.0 : 1.0);
+		double h = horizontalSpeed * (sprinting ? 2.0 : 1.0);
 		boolean straight = false, strafing = false;
 
-		if (this.input.keyPresses.forward())  { vx += forward.x * h; vz += forward.z * h; straight = true; }
-		if (this.input.keyPresses.backward()) { vx -= forward.x * h; vz -= forward.z * h; straight = true; }
-		if (this.input.keyPresses.right())    { vx += side.x * h;    vz += side.z * h;    strafing = true; }
-		if (this.input.keyPresses.left())     { vx -= side.x * h;    vz -= side.z * h;    strafing = true; }
+		if (this.input.up)    { vx += forward.x * h; vz += forward.z * h; straight = true; }
+		if (this.input.down)  { vx -= forward.x * h; vz -= forward.z * h; straight = true; }
+		if (this.input.right) { vx += side.x * h;    vz += side.z * h;    strafing = true; }
+		if (this.input.left)  { vx -= side.x * h;    vz -= side.z * h;    strafing = true; }
 		if (straight && strafing) { vx *= DIAGONAL; vz *= DIAGONAL; }
-		if (this.input.keyPresses.jump())  { vy += verticalSpeed; }
-		if (this.input.keyPresses.shift()) { vy -= verticalSpeed; }
+		if (this.input.jumping)      { vy += verticalSpeed; }
+		if (this.input.shiftKeyDown) { vy -= verticalSpeed; }
 
 		// move() clips the motion against world block collision so the drone stops at
 		// terrain instead of passing through it.

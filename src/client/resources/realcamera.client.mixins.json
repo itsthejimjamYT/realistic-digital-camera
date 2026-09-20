@@ -1,14 +1,12 @@
 {
 	"required": true,
 	"package": "com.itsthejimjam.realcamera.client.mixin",
-	"compatibilityLevel": "JAVA_25",
+	"compatibilityLevel": "JAVA_17",
 	"client": [
 		"BlockOutlineSuppressMixin",
-		"CameraArmPoseMixin",
 		"CameraDetachedMixin",
 		"CameraShakeMixin",
 		"CameraZoomMixin",
-		"CaptureHookMixin",
 		"DroneCameraMixin",
 		"FrameEndCaptureMixin",
 		"HandRenderMixin",
@@ -19,8 +17,6 @@
 		"PhotoMouseMixin",
 		"PlayerFreezeMixin",
 		"PostChainAccessor",
-		"PostPassAccessor",
-		"PostPassInputMixin",
 		"ShutterMixin",
 		"TripodCameraMixin",
 		"WindowSizeMixin"

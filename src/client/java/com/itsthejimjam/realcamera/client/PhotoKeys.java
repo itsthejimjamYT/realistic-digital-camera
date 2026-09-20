@@ -1,9 +1,8 @@
 package com.itsthejimjam.realcamera.client;
 
-import com.itsthejimjam.realcamera.PhotoMode;
 import com.mojang.blaze3d.platform.InputConstants;
 
-import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
+import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
@@ -14,8 +13,7 @@ import net.minecraft.network.chat.Component;
  * photo mode they are inert so they won't clash with normal play.
  */
 public final class PhotoKeys {
-	private static final KeyMapping.Category CATEGORY =
-			new KeyMapping.Category(PhotoMode.id("main"));
+	private static final String CATEGORY = "key.categories.realcamera.main";
 
 	private static KeyMapping panel;
 	private static KeyMapping aspect;
@@ -39,7 +37,7 @@ public final class PhotoKeys {
 	}
 
 	private static KeyMapping bind(String name, int defaultKey) {
-		return KeyMappingHelper.registerKeyMapping(
+		return KeyBindingHelper.registerKeyBinding(
 				new KeyMapping("key.realcamera." + name, InputConstants.Type.KEYSYM, defaultKey, CATEGORY));
 	}
 
@@ -61,7 +59,7 @@ public final class PhotoKeys {
 		while (panel.consumeClick()) {
 			// Keybinds aren't polled while a screen is open, so this only ever opens;
 			// PhotoPanelScreen handles its own Tab/Esc to close.
-			Minecraft.getInstance().gui.setScreen(new PhotoPanelScreen());
+			Minecraft.getInstance().setScreen(new PhotoPanelScreen());
 		}
 
 		while (focus.consumeClick()) {
@@ -96,8 +94,8 @@ public final class PhotoKeys {
 		if (changed) {
 			Minecraft mc = Minecraft.getInstance();
 			if (mc.player != null) {
-				mc.player.sendOverlayMessage(Component.literal(
-						String.format("%s   ·   f/%s", Framing.label(), fstop())));
+				mc.player.displayClientMessage(Component.literal(
+						String.format("%s   ·   f/%s", Framing.label(), fstop())), true);
 			}
 		}
 	}

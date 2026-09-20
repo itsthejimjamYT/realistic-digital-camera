@@ -1,6 +1,6 @@
 package com.itsthejimjam.realcamera.menu;
 
-import java.util.List;
+import java.util.function.Predicate;
 
 import com.itsthejimjam.realcamera.PhotoMode;
 import com.itsthejimjam.realcamera.block.TripodBlock;
@@ -14,14 +14,14 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.component.ItemContainerContents;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * The camera-body loadout: a lens slot and a filter slot, backed by the held body's
- * {@link PhotoMode#LOADOUT} component. Contents write straight back to the item whenever
- * a slot changes and again when the screen closes, so the loadout survives a crash. The
- * tripod is a placeable block, not a loadout item.
+ * loadout NBT (see {@link PhotoMode#loadoutContents}). Contents write straight back to
+ * the item whenever a slot changes and again when the screen closes, so the loadout
+ * survives a crash. The tripod is a placeable block, not a loadout item.
  */
 public class CameraBodyMenu extends AbstractContainerMenu {
 
@@ -66,14 +66,24 @@ public class CameraBodyMenu extends AbstractContainerMenu {
 		addSlot(gearSlot(LENS_SLOT, PhotoMode::isLens));
 		addSlot(gearSlot(FILTER_SLOT, PhotoMode::isFilter));
 
-		addStandardInventorySlots(playerInv, 8, 84);
+		// 1.20.4 has no addStandardInventorySlots() helper yet — the classic 3x9 + hotbar loop.
+		int x = 8;
+		int y = 84;
+		for (int row = 0; row < 3; row++) {
+			for (int col = 0; col < 9; col++) {
+				addSlot(new Slot(playerInv, col + row * 9 + 9, x + col * 18, y + row * 18));
+			}
+		}
+		for (int col = 0; col < 9; col++) {
+			addSlot(new Slot(playerInv, col, x + col * 18, y + 58));
+		}
 	}
 
 	private static ItemStack cameraOn(Player p, BlockPos pos) {
 		return p.level().getBlockEntity(pos) instanceof TripodBlockEntity be ? be.getCamera() : ItemStack.EMPTY;
 	}
 
-	private Slot gearSlot(int idx, java.util.function.Predicate<ItemStack> accepts) {
+	private Slot gearSlot(int idx, Predicate<ItemStack> accepts) {
 		return new Slot(gear, idx, SLOT_X[idx], SLOT_Y) {
 			@Override
 			public boolean mayPlace(ItemStack stack) {
@@ -104,13 +114,13 @@ public class CameraBodyMenu extends AbstractContainerMenu {
 			return;
 		}
 		ItemStack lens = gear.getItem(LENS_SLOT);
-		ItemContainerContents load = ItemContainerContents.fromItems(List.of(lens, gear.getItem(FILTER_SLOT)));
+		ItemStack filter = gear.getItem(FILTER_SLOT);
 
 		if (tripodPos != null) {
 			if (player.level().getBlockEntity(tripodPos) instanceof TripodBlockEntity be
 					&& PhotoMode.isCameraBody(be.getCamera())) {
 				ItemStack cam = be.getCamera().copy();
-				cam.set(PhotoMode.LOADOUT, load);
+				PhotoMode.setLoadoutContents(cam, lens, filter);
 				PhotoMode.setLensModel(cam, lens);
 				be.setCamera(cam);
 				BlockState st = player.level().getBlockState(tripodPos);
@@ -123,7 +133,7 @@ public class CameraBodyMenu extends AbstractContainerMenu {
 
 		ItemStack body = player.getMainHandItem();
 		if (PhotoMode.isCameraBody(body)) {
-			body.set(PhotoMode.LOADOUT, load);
+			PhotoMode.setLoadoutContents(body, lens, filter);
 			PhotoMode.setLensModel(body, lens);
 		}
 	}
@@ -133,7 +143,7 @@ public class CameraBodyMenu extends AbstractContainerMenu {
 		if (tripodPos != null) {
 			BlockState st = p.level().getBlockState(tripodPos);
 			return st.is(PhotoMode.TRIPOD) && st.getValue(TripodBlock.MOUNTED)
-					&& p.distanceToSqr(net.minecraft.world.phys.Vec3.atCenterOf(tripodPos)) < 96.0;
+					&& p.distanceToSqr(Vec3.atCenterOf(tripodPos)) < 96.0;
 		}
 		return PhotoMode.isCameraBody(p.getMainHandItem());
 	}

@@ -1,5 +1,7 @@
 package com.itsthejimjam.realcamera.menu;
 
+import java.util.Optional;
+
 import com.itsthejimjam.realcamera.PhotoMode;
 import com.itsthejimjam.realcamera.recipe.WorkbenchRecipe;
 
@@ -15,7 +17,6 @@ import net.minecraft.world.inventory.ResultContainer;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.inventory.TransientCraftingContainer;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.crafting.CraftingInput;
 import net.minecraft.world.item.crafting.RecipeHolder;
 
 /**
@@ -69,7 +70,15 @@ public class WorkbenchMenu extends AbstractContainerMenu {
 			}
 		}
 
-		addStandardInventorySlots(inv, INV_X, INV_Y);
+		// 1.20.4 has no addStandardInventorySlots() helper yet — the classic 3x9 + hotbar loop.
+		for (int row = 0; row < 3; row++) {
+			for (int col = 0; col < 9; col++) {
+				addSlot(new Slot(inv, col + row * 9 + 9, INV_X + col * 18, INV_Y + row * 18));
+			}
+		}
+		for (int col = 0; col < 9; col++) {
+			addSlot(new Slot(inv, col, INV_X + col * 18, INV_Y + 58));
+		}
 	}
 
 	@Override
@@ -79,10 +88,9 @@ public class WorkbenchMenu extends AbstractContainerMenu {
 			if (!(level instanceof ServerLevel serverLevel)) {
 				return;
 			}
-			CraftingInput input = craft.asCraftInput();
-			java.util.Optional<RecipeHolder<WorkbenchRecipe>> match =
-					serverLevel.recipeAccess().getRecipeFor(PhotoMode.WORKBENCH_RECIPE_TYPE, input, serverLevel);
-			ItemStack out = match.map(h -> h.value().assemble(input)).orElse(ItemStack.EMPTY);
+			Optional<RecipeHolder<WorkbenchRecipe>> match =
+					serverLevel.getRecipeManager().getRecipeFor(PhotoMode.WORKBENCH_RECIPE_TYPE, craft, serverLevel);
+			ItemStack out = match.map(h -> h.value().assemble(craft, serverLevel.registryAccess())).orElse(ItemStack.EMPTY);
 			result.setItem(0, out);
 			result.setRecipeUsed(match.orElse(null));
 			if (player instanceof ServerPlayer sp) {

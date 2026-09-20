@@ -1,24 +1,21 @@
 package com.itsthejimjam.realcamera.client;
 
-import com.itsthejimjam.realcamera.PhotoMode;
+import com.mojang.blaze3d.vertex.PoseStack;
 
-import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElement;
+import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 
-import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
-import net.minecraft.resources.Identifier;
+import net.minecraft.client.gui.GuiGraphics;
 
 /**
  * The photo-mode on-screen overlay: aspect-ratio framing bars, a rule-of-thirds grid,
- * and a small settings readout. Registered as a Fabric HUD element so it draws on top
- * of the (suppressed) vanilla HUD while a session is active.
+ * and a small settings readout. Registered on {@link HudRenderCallback} (1.20.4 predates
+ * the newer ordered {@code HudElement}/{@code HudElementRegistry} system) so it draws on
+ * top of the (suppressed) vanilla HUD while a session is active.
  */
-public final class PhotoOverlay implements HudElement {
-	public static final Identifier ID = PhotoMode.id("overlay");
+public final class PhotoOverlay implements HudRenderCallback {
 
 	private static final int NOLENS_BG = 0xFFF3F3F3;
-	private static final int NOLENS_FG = 0xFF1A1A1A;
 	private static final int NOLENS_SUB = 0xFF808080;
 
 	private static final int BAR_COLOR = 0xFF000000;
@@ -29,7 +26,7 @@ public final class PhotoOverlay implements HudElement {
 	private static final int PICK_COLOR = 0xFFFFE24D;
 
 	@Override
-	public void extractRenderState(GuiGraphicsExtractor graphics, DeltaTracker deltaTracker) {
+	public void onHudRender(GuiGraphics graphics, float tickDelta) {
 		if (!PhotoModeSession.isActive() || PhotoCapture.wantsBigFrame()) {
 			return;
 		}
@@ -37,7 +34,6 @@ public final class PhotoOverlay implements HudElement {
 		Minecraft mc = Minecraft.getInstance();
 		int w = graphics.guiWidth();
 		int h = graphics.guiHeight();
-		graphics.nextStratum();
 
 		// --- no lens on the mount: a plain prompt, no blackout / whiteout ---
 		if (PhotoModeSession.noLensAttached()) {
@@ -48,8 +44,8 @@ public final class PhotoOverlay implements HudElement {
 			int cx = w / 2;
 			int cy = h / 2 - 6;
 			graphics.fill(cx - tw / 2 - 8, cy - 6, cx + tw / 2 + 8, cy + 24, 0xB0000000);
-			graphics.centeredText(mc.font, msg, cx, cy, NOLENS_BG);
-			graphics.centeredText(mc.font, sub, cx, cy + 12, NOLENS_SUB);
+			graphics.drawCenteredString(mc.font, msg, cx, cy, NOLENS_BG);
+			graphics.drawCenteredString(mc.font, sub, cx, cy + 12, NOLENS_SUB);
 			return;
 		}
 
@@ -109,7 +105,7 @@ public final class PhotoOverlay implements HudElement {
 			String modeTag = PhotoModeSession.shootModeIndex() == 3 ? "" : PhotoModeSession.shootModeLabel() + " · ";
 			String ml = modeTag + PhotoModeSession.METERING_OPTIONS[PhotoModeSession.meteringIndex()]
 					.toUpperCase(java.util.Locale.ROOT);
-			graphics.text(mc.font, ml, mcx - mc.font.width(ml) / 2, fy0 + 24, HINT_COLOR, true);
+			graphics.drawString(mc.font, ml, mcx - mc.font.width(ml) / 2, fy0 + 24, HINT_COLOR, true);
 		}
 
 		// --- settings readout + controls: always centred on the screen bottom, independent
@@ -124,14 +120,14 @@ public final class PhotoOverlay implements HudElement {
 		int longest = Math.max(mc.font.width(readout), mc.font.width(hint));
 		int avail = w - 12;
 		float s = longest > avail ? (float) avail / longest : 1.0f;
-		var pose = graphics.pose();
-		pose.pushMatrix();
-		pose.translate(w / 2.0f, h - 4.0f);
-		pose.scale(s, s);
-		graphics.centeredText(mc.font, readout, 0, -20, TEXT_COLOR);
-		graphics.centeredText(mc.font, hint, 0, -9,
+		PoseStack pose = graphics.pose();
+		pose.pushPose();
+		pose.translate(w / 2.0f, h - 4.0f, 0.0f);
+		pose.scale(s, s, 1.0f);
+		graphics.drawCenteredString(mc.font, readout, 0, -20, TEXT_COLOR);
+		graphics.drawCenteredString(mc.font, hint, 0, -9,
 				PhotoModeSession.isFocusPicking() ? PICK_COLOR : HINT_COLOR);
-		pose.popMatrix();
+		pose.popPose();
 	}
 
 	private static String hintLine() {
@@ -167,14 +163,14 @@ public final class PhotoOverlay implements HudElement {
 				PhotoModeSession.focalLengthMm());
 	}
 
-	private static void marker(GuiGraphicsExtractor g, int x, int y, int r, int col) {
-		g.horizontalLine(x - r, x + r, y, col);
-		g.verticalLine(x, y - r, y + r, col);
+	private static void marker(GuiGraphics g, int x, int y, int r, int col) {
+		g.hLine(x - r, x + r, y, col);
+		g.vLine(x, y - r, y + r, col);
 	}
 
 	/** Draws the selected composition overlay inside the framed crop. Index matches
 	 *  {@link DisplayAids#GRID_TYPES}: 0 Off, 1 Thirds, 2 Phi, 3 Center, 4 Diagonal, 5 4x4. */
-	private static void drawGrid(GuiGraphicsExtractor g, int type, int x0, int y0, int x1, int y1) {
+	private static void drawGrid(GuiGraphics g, int type, int x0, int y0, int x1, int y1) {
 		int w = x1 - x0;
 		int h = y1 - y0;
 		switch (type) {
@@ -192,11 +188,11 @@ public final class PhotoOverlay implements HudElement {
 		}
 	}
 
-	private static void lines(GuiGraphicsExtractor g, int x0, int y0, int x1, int y1,
+	private static void lines(GuiGraphics g, int x0, int y0, int x1, int y1,
 			int w, int h, float[] fracs) {
 		for (float f : fracs) {
-			g.verticalLine(x0 + Math.round(w * f), y0, y1, GRID_COLOR);
-			g.horizontalLine(x0, x1, y0 + Math.round(h * f), GRID_COLOR);
+			g.vLine(x0 + Math.round(w * f), y0, y1, GRID_COLOR);
+			g.hLine(x0, x1, y0 + Math.round(h * f), GRID_COLOR);
 		}
 	}
 
@@ -204,19 +200,18 @@ public final class PhotoOverlay implements HudElement {
 	private static final int METER_OK = 0xFF6BE06B;
 	private static final int METER_WARN = 0xFFF2C14E;
 	private static final int METER_CLIP = 0xFFF25C5C;
+	private static final int METER_BRACKET = 0xFFFFE24D;
 
 	/** A ±3-stop exposure scale centred on {@code cx}, baseline at {@code y}, with a
 	 *  pointer at {@code stops} above (+) / below (-) a neutral exposure. */
-	private static final int METER_BRACKET = 0xFFFFE24D;
-
-	private static void drawMeter(GuiGraphicsExtractor g, int cx, int y, float stops) {
+	private static void drawMeter(GuiGraphics g, int cx, int y, float stops) {
 		final int per = 34;                 // px per stop
 		final int half = per * 3;           // ±3 stops
-		g.horizontalLine(cx - half, cx + half, y, METER_TRACK);
+		g.hLine(cx - half, cx + half, y, METER_TRACK);
 		for (int s = -3; s <= 3; s++) {
 			int tx = cx + s * per;
 			int th = s == 0 ? 6 : 3;
-			g.verticalLine(tx, y - th, y + th, METER_TRACK);
+			g.vLine(tx, y - th, y + th, METER_TRACK);
 		}
 
 		float c = Math.max(-3.15f, Math.min(3.15f, stops));
@@ -241,7 +236,7 @@ public final class PhotoOverlay implements HudElement {
 	}
 
 	/** No arbitrary-line primitive on the HUD graphics, so step a thin dotted trail. */
-	private static void diagonal(GuiGraphicsExtractor g, int ax, int ay, int bx, int by) {
+	private static void diagonal(GuiGraphics g, int ax, int ay, int bx, int by) {
 		int steps = Math.max(Math.abs(bx - ax), Math.abs(by - ay)) / 4;
 		if (steps <= 0) {
 			return;

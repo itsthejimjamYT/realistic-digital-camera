@@ -1,0 +1,23 @@
+{
+    "blend": { "func": "add", "srcrgb": "one", "dstrgb": "zero" },
+    "vertex": "screenquad",
+    "fragment": "realcamera_dof_shaderpack",
+    "attributes": [ "Position" ],
+    "samplers": [
+        { "name": "DiffuseSampler" },
+        { "name": "PreSampler" },
+        { "name": "MainDepthSampler" }
+    ],
+    "uniforms": [
+        { "name": "ProjMat", "type": "matrix4x4", "count": 16, "values": [ 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0 ] },
+        { "name": "OutSize", "type": "float", "count": 2, "values": [ 1.0, 1.0 ] },
+        { "name": "BlurStrength", "type": "float", "count": 1, "values": [ 8.0 ] },
+        { "name": "MaxRadiusFrac", "type": "float", "count": 1, "values": [ 0.010 ] },
+        { "name": "FocusUV", "type": "float", "count": 2, "values": [ 0.5, 0.5 ] },
+        { "name": "FarBlurGain", "type": "float", "count": 1, "values": [ 1.3 ] },
+        { "name": "SoftKnee", "type": "float", "count": 1, "values": [ 0.045 ] },
+        { "name": "HlBoost", "type": "float", "count": 1, "values": [ 0.25 ] },
+        { "name": "HlThreshold", "type": "float", "count": 1, "values": [ 0.80 ] },
+        { "name": "OnsetMaxPx", "type": "float", "count": 1, "values": [ 5.5 ] }
+    ]
+}

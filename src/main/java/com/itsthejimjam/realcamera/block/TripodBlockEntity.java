@@ -3,17 +3,16 @@ package com.itsthejimjam.realcamera.block;
 import com.itsthejimjam.realcamera.PhotoMode;
 
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.protocol.Packet;
+import net.minecraft.network.protocol.game.ClientGamePacketListener;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.storage.ValueInput;
-import net.minecraft.world.level.storage.ValueOutput;
 
-/** Holds the camera body mounted on a tripod (its full item + components), synced to
- *  the client so photo mode can read the loadout when you climb behind it. */
+/** Holds the camera body mounted on a tripod (its full item + tags), synced to the
+ *  client so photo mode can read the loadout when you climb behind it. */
 public class TripodBlockEntity extends BlockEntity {
 
 	private ItemStack camera = ItemStack.EMPTY;
@@ -35,26 +34,28 @@ public class TripodBlockEntity extends BlockEntity {
 	}
 
 	@Override
-	protected void loadAdditional(ValueInput input) {
-		super.loadAdditional(input);
-		this.camera = input.read("Camera", ItemStack.CODEC).orElse(ItemStack.EMPTY);
+	public void load(CompoundTag tag) {
+		super.load(tag);
+		this.camera = tag.contains("Camera") ? ItemStack.of(tag.getCompound("Camera")) : ItemStack.EMPTY;
 	}
 
 	@Override
-	protected void saveAdditional(ValueOutput output) {
-		super.saveAdditional(output);
+	protected void saveAdditional(CompoundTag tag) {
+		super.saveAdditional(tag);
 		if (!camera.isEmpty()) {
-			output.store("Camera", ItemStack.CODEC, camera);
+			tag.put("Camera", camera.save(new CompoundTag()));
 		}
 	}
 
 	@Override
-	public ClientboundBlockEntityDataPacket getUpdatePacket() {
+	public Packet<ClientGamePacketListener> getUpdatePacket() {
 		return ClientboundBlockEntityDataPacket.create(this);
 	}
 
 	@Override
-	public CompoundTag getUpdateTag(HolderLookup.Provider registries) {
-		return saveCustomOnly(registries);
+	public CompoundTag getUpdateTag() {
+		CompoundTag tag = new CompoundTag();
+		saveAdditional(tag);
+		return tag;
 	}
 }

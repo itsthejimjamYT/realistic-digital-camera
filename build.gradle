@@ -1,15 +1,23 @@
-plugins {
-	id 'net.fabricmc.fabric-loom' version "${loom_version}"
-	id 'maven-publish'
+// Applied the legacy buildscript/apply-plugin way (not `plugins { id 'net.fabricmc.fabric-loom' }`)
+// on purpose: the modern plugins{} DSL resolves loom through a Gradle Plugin Portal marker
+// artifact, and that marker makes loom's own PluginManager.hasPlugin() self-check see the
+// plugin as "already applied" before its extension finishes constructing — which makes loom
+// wrongly treat this obfuscated version as if it needed no remapping (Mojang mappings/`mappings`
+// config disappear with "non-obfuscated environment" errors). Applying it this way sidesteps
+// the marker entirely and remapping works correctly.
+buildscript {
+	repositories {
+		maven { url = 'https://maven.fabricmc.net/' }
+		mavenCentral()
+		gradlePluginPortal()
+	}
+	dependencies {
+		classpath "net.fabricmc:fabric-loom:${loom_version}"
+	}
 }
 
-repositories {
-	// Cloth Config (config-screen builder) and Mod Menu (the "Configure" button).
-	maven { url "https://maven.shedaniel.me/" }
-	maven { url "https://maven.terraformersmc.com/releases/" }
-	// JEI (Camera Workbench recipe category).
-	maven { url "https://api.modrinth.com/maven" }
-}
+apply plugin: 'fabric-loom'
+apply plugin: 'maven-publish'
 
 loom {
 	splitEnvironmentSourceSets()
@@ -25,18 +33,24 @@ loom {
 dependencies {
 	// To change the versions see the gradle.properties file
 	minecraft "com.mojang:minecraft:${project.minecraft_version}"
+	mappings loom.officialMojangMappings()
 	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
 
-	// Fabric API. This is technically optional, but you probably want it anyway.
-	implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+	// Fabric Loader bundles Mixin internally at runtime, but this legacy-applied Loom
+	// (see the note up top) doesn't auto-add it to the compile classpath the way the
+	// modern plugins{} DSL does for the 26.2 sibling project — declare it explicitly so
+	// @Mixin/@Inject/@Shadow resolve. compileOnly: the real implementation comes from
+	// fabric-loader at runtime, so this must not also ship on the runtime classpath.
+	compileOnly "net.fabricmc:sponge-mixin:0.17.3+mixin.0.8.7"
 
-	// Compiled and dev-run against, only *suggested* at ship time (see fabric.mod.json):
-	// the settings screen shows when both are installed; config still loads/saves without.
-	implementation "me.shedaniel.cloth:cloth-config-fabric:${project.cloth_config_version}"
-	implementation "com.terraformersmc:modmenu:${project.modmenu_version}"
-	// JEI — the workbench recipe category. Soft dependency; the @JeiPlugin class only
-	// loads when JEI is present. (This Loom auto-remaps plain `implementation` mod jars.)
-	implementation "maven.modrinth:jei:${project.jei_version}"
+	// Fabric API. This is technically optional, but you probably want it anyway.
+	// modImplementation (not plain implementation) — this is an obfuscated Minecraft
+	// version, so Loom must remap the mod jar's intermediary-named internals to match
+	// our compile mappings; plain `implementation` skips that step.
+	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+
+	// Cloth Config / Mod Menu / JEI intentionally not added yet — pinning to versions
+	// compatible with 1.20.4 comes once the core mod loads on this version.
 }
 
 processResources {
@@ -49,7 +63,7 @@ processResources {
 }
 
 tasks.withType(JavaCompile).configureEach {
-	it.options.release = 25
+	it.options.release = 17
 }
 
 java {
@@ -58,8 +72,8 @@ java {
 	// If you remove this line, sources will not be generated.
 	withSourcesJar()
 
-	sourceCompatibility = JavaVersion.VERSION_25
-	targetCompatibility = JavaVersion.VERSION_25
+	sourceCompatibility = JavaVersion.VERSION_17
+	targetCompatibility = JavaVersion.VERSION_17
 }
 
 jar {

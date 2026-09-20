@@ -2804,5 +2804,73 @@
         1.0
       ]
     }
-  }
+  },
+  "overrides": [
+    {
+      "predicate": {
+        "custom_model_data": 1
+      },
+      "model": "realcamera:item/camera_body_lens_14mm"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 2
+      },
+      "model": "realcamera:item/camera_body_lens_24mm"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 3
+      },
+      "model": "realcamera:item/camera_body_lens_35mm"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 4
+      },
+      "model": "realcamera:item/camera_body_lens_50mm"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 5
+      },
+      "model": "realcamera:item/camera_body_lens_85mm"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 6
+      },
+      "model": "realcamera:item/camera_body_lens_135mm"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 7
+      },
+      "model": "realcamera:item/camera_body_lens_16_35mm"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 8
+      },
+      "model": "realcamera:item/camera_body_lens_24_70mm"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 9
+      },
+      "model": "realcamera:item/camera_body_lens_70_200mm"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 10
+      },
+      "model": "realcamera:item/camera_body_lens_100_400mm"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 11
+      },
+      "model": "realcamera:item/camera_body_lens_200_600mm"
+    }
+  ]
 }

@@ -65,34 +65,6 @@ public final class PhotoConfig {
 	/** ISO at which grain begins to appear. */
 	public int grainOnsetIso = 3200;
 
-	// ---- Long exposure ----
-	/** How strongly a long exposure recovers transient highlights (star trails, sparks —
-	 *  anything bright that only passes through a given pixel in a few sub-frames) toward
-	 *  their peak brightness instead of the plain stacked average. 0 = plain average (a
-	 *  star trail dims by roughly the sub-frame count, same as before this existed); 1 =
-	 *  fully recovers to the brightest value any sub-frame saw at that pixel. Static
-	 *  content (peak ≈ average, since it doesn't flicker through the frame) is untouched
-	 *  either way — this only pulls up pixels where something briefly flashed brighter
-	 *  than the average, so it can't uniformly brighten the whole shot. */
-	public float starTrailIntensity = 0.15f;
-
-	// ---- Enhanced file ----
-	/** Also save a second, high-precision 16-bit file alongside the normal photo — the
-	 *  camera-accurate exposure/white-balance only, skipping the destructive contrast
-	 *  crush / film recipe / highlight clamp the normal 8-bit photo applies, so real
-	 *  shadow/highlight detail survives for recovery in an editor. Off by default: it's
-	 *  extra capture time and disk space, and most shots don't need it. */
-	public boolean saveEnhancedFile = false;
-
-	// ---- HDR bracket merge ----
-	/** When a bracket sequence finishes, fuse the frames in-mod into one 16-bit HDR file
-	 *  instead of saving each bracket frame separately. On by default — separate JPEG
-	 *  brackets merged externally lose shadow detail before the merge even happens (JPEG's
-	 *  8-bit + lossy compression), so the in-mod merge is strictly the better default; the
-	 *  "Save Each" option stays available for anyone who wants to merge with different
-	 *  tools/settings themselves. */
-	public boolean autoMergeHdr = true;
-
 	// ---- Lens / zoom ----
 	/** Longest zoom the scroll wheel reaches, as a multiple of the base lens. */
 	public float maxZoom = 8.0f;
@@ -141,10 +113,6 @@ public final class PhotoConfig {
 
 	public int grainOnsetIso() {
 		return Mth.clamp(grainOnsetIso, 200, 25600);
-	}
-
-	public float starTrailIntensity() {
-		return Mth.clamp(starTrailIntensity, 0.0f, 1.0f);
 	}
 
 	public float maxZoom() {
@@ -231,8 +199,6 @@ public final class PhotoConfig {
 			() -> c().grainAmount, v -> c().grainAmount = v);
 	public static final Knob GRAIN_SIZE = new Knob(0.5f, 3.0f, 0.05f, 1.0f, "%.2fx",
 			() -> c().grainSize, v -> c().grainSize = v);
-	public static final Knob STAR_TRAILS = new Knob(0.0f, 1.0f, 0.05f, 0.15f, "%.2f",
-			() -> c().starTrailIntensity, v -> c().starTrailIntensity = v);
 	public static final Knob MAX_ZOOM = new Knob(2.0f, 20.0f, 0.5f, 8.0f, "%.1fx",
 			() -> c().maxZoom, v -> c().maxZoom = v);
 	public static final Knob WIDEST_FOV = new Knob(90.0f, 150.0f, 1.0f, 124.0f, "%.0f deg",
@@ -260,48 +226,6 @@ public final class PhotoConfig {
 
 	public static void resetGrainOnsetIso() {
 		c().grainOnsetIso = 3200;
-		dirty = true;
-	}
-
-	public static final String[] TOGGLE = {"Off", "On"};
-
-	public static int enhancedFileIndex() {
-		return c().saveEnhancedFile ? 1 : 0;
-	}
-
-	public static void setEnhancedFileIndex(int i) {
-		c().saveEnhancedFile = i == 1;
-		dirty = true;
-	}
-
-	public static void stepEnhancedFile(int dir) {
-		c().saveEnhancedFile = !c().saveEnhancedFile;
-		dirty = true;
-	}
-
-	public static void resetEnhancedFile() {
-		c().saveEnhancedFile = false;
-		dirty = true;
-	}
-
-	public static final String[] HDR_MERGE_OPTIONS = {"Save Each", "Auto Merge"};
-
-	public static int hdrMergeIndex() {
-		return c().autoMergeHdr ? 1 : 0;
-	}
-
-	public static void setHdrMergeIndex(int i) {
-		c().autoMergeHdr = i == 1;
-		dirty = true;
-	}
-
-	public static void stepHdrMerge(int dir) {
-		c().autoMergeHdr = !c().autoMergeHdr;
-		dirty = true;
-	}
-
-	public static void resetHdrMerge() {
-		c().autoMergeHdr = true;
 		dirty = true;
 	}
 

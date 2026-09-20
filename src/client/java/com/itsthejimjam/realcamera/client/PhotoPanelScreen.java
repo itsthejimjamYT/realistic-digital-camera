@@ -9,12 +9,12 @@ import com.itsthejimjam.realcamera.client.config.PhotoConfig;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.client.input.KeyEvent;
-import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.Mth;
+
+import org.lwjgl.glfw.GLFW;
 
 /**
  * The photo-mode settings panel. Opened with Tab while a session is active; it sits
@@ -43,15 +43,6 @@ public final class PhotoPanelScreen extends Screen {
 		void step(int dir);
 
 		void reset();
-
-		/** False to have "Reset Page" skip this cell — for a setting that reads as a
-		 *  persistent mode choice rather than "this tab's settings for this shot" (e.g.
-		 *  RAW Mode, on the Frame tab: a page reset there is about aspect/resolution/
-		 *  supersample, and shouldn't silently also turn off a capture-quality toggle).
-		 *  Middle-click reset on the cell itself is unaffected either way. */
-		default boolean includeInPageReset() {
-			return true;
-		}
 	}
 
 	private record Tab(String name, Cell[] cells) {
@@ -78,8 +69,7 @@ public final class PhotoPanelScreen extends Screen {
 	private static final int HINT_COLOR = 0xFF808080;
 	private static final int SUMMARY_COLOR = 0xFF6E6E6E;
 
-	private static final String RESET_PAGE_LABEL = "RESET PAGE";
-	private static final String RESET_ALL_LABEL = "RESET ALL";
+	private static final String RESET_LABEL = "RESET ALL SETTINGS";
 
 	/** Remembered across opens within a session. */
 	private static int activeTab = 0;
@@ -129,9 +119,6 @@ public final class PhotoPanelScreen extends Screen {
 						Bracket::framesIndex, Bracket::setFramesIndex, Bracket::stepFrames, Bracket::resetFrames),
 				listCell("EV Step", Bracket.EV_STEPS,
 						Bracket::stepIndex, Bracket::setStepIndex, Bracket::stepStep, Bracket::resetStep),
-				excludedFromPageReset(listCell("HDR Merge", PhotoConfig.HDR_MERGE_OPTIONS,
-						PhotoConfig::hdrMergeIndex, PhotoConfig::setHdrMergeIndex,
-						PhotoConfig::stepHdrMerge, PhotoConfig::resetHdrMerge)),
 		}));
 		t.add(new Tab("Recipes", new Cell[] {
 				listCell("Recipe", FilmParams.RECIPE_NAMES,
@@ -169,9 +156,6 @@ public final class PhotoPanelScreen extends Screen {
 				listCell("Supersample", Framing.SS_OPTIONS,
 						Framing::getSsIndex, Framing::setSsIndex,
 						Framing::stepSupersample, Framing::resetSupersample),
-				excludedFromPageReset(listCell("RAW Mode", PhotoConfig.TOGGLE,
-						PhotoConfig::enhancedFileIndex, PhotoConfig::setEnhancedFileIndex,
-						PhotoConfig::stepEnhancedFile, PhotoConfig::resetEnhancedFile)),
 		}));
 		t.add(new Tab("Display", new Cell[] {
 				listCell("Grid", DisplayAids.GRID_TYPES,
@@ -219,7 +203,6 @@ public final class PhotoPanelScreen extends Screen {
 					knobCell("Max Zoom", PhotoConfig.MAX_ZOOM),
 					knobCell("Wide FOV", PhotoConfig.WIDEST_FOV),
 					knobCell("Base FOV", PhotoConfig.BASE_FOV),
-					knobCell("Star Trails", PhotoConfig.STAR_TRAILS),
 			}));
 		}
 		return t.toArray(new Tab[0]);
@@ -289,10 +272,8 @@ public final class PhotoPanelScreen extends Screen {
 
 	private Cell hoveredCell = null;
 	private final int[] tabX = new int[tabs.length * 2];
-	private int resetPageBtnX0 = 0;
-	private int resetPageBtnX1 = -1;
-	private int resetAllBtnX0 = 0;
-	private int resetAllBtnX1 = -1;
+	private int resetBtnX0 = 0;
+	private int resetBtnX1 = -1;
 
 	/** Open pick-a-value list, or null. */
 	private Cell openCell = null;
@@ -316,13 +297,13 @@ public final class PhotoPanelScreen extends Screen {
 	}
 
 	public static boolean isOpen() {
-		return Minecraft.getInstance().gui.screen() instanceof PhotoPanelScreen;
+		return Minecraft.getInstance().screen instanceof PhotoPanelScreen;
 	}
 
 	/** Scroll wheel — the only way to change a setting: nudge the control the pointer
 	 *  is over by one step (or scroll an open list if the pointer is over it). */
 	public static boolean scrollHovered(double dir) {
-		if (dir == 0 || !(Minecraft.getInstance().gui.screen() instanceof PhotoPanelScreen panel)) {
+		if (dir == 0 || !(Minecraft.getInstance().screen instanceof PhotoPanelScreen panel)) {
 			return false;
 		}
 		if (panel.openCell != null && panel.inPopup(panel.lastMouseX, panel.lastMouseY)) {
@@ -390,11 +371,6 @@ public final class PhotoPanelScreen extends Screen {
 		return isRecipeEditor() ? SIDEBAR_FIRST : currentCells().length;
 	}
 
-	private Cell selectedCell() {
-		Cell[] cs = currentCells();
-		return cs[Math.min(selected, cs.length - 1)];
-	}
-
 	private int visibleRows(Cell c) {
 		return Math.min(c.options().length, POPUP_MAX_ROWS);
 	}
@@ -428,29 +404,24 @@ public final class PhotoPanelScreen extends Screen {
 	}
 
 	@Override
-	public void extractBackground(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float a) {
-		// Deliberately empty: keep the live scene visible.
-	}
-
-	@Override
-	public boolean keyPressed(KeyEvent event) {
+	public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
 		if (openCell != null) {
-			if (event.isEscape()) {
+			if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
 				closePopup();
 				return true;
 			}
 			int n = openCell.options().length;
-			if (event.isUp()) {
+			if (keyCode == GLFW.GLFW_KEY_UP) {
 				openHover = Mth.clamp(openHover - 1, 0, n - 1);
 				followHover();
 				return true;
 			}
-			if (event.isDown()) {
+			if (keyCode == GLFW.GLFW_KEY_DOWN) {
 				openHover = Mth.clamp(openHover + 1, 0, n - 1);
 				followHover();
 				return true;
 			}
-			if (event.isConfirmation()) {
+			if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
 				openCell.select(openHover);
 				closePopup();
 				return true;
@@ -458,13 +429,13 @@ public final class PhotoPanelScreen extends Screen {
 			return true; // swallow everything else while the list is up
 		}
 
-		if (event.isCycleFocus()) { // Tab
+		if (keyCode == GLFW.GLFW_KEY_TAB) {
 			this.onClose();
 			return true;
 		}
 		// Settings change by scrolling the control under the pointer — no keyboard
 		// value nudging, no selected-cell concept. Tabs are switched by clicking them.
-		return super.keyPressed(event);
+		return super.keyPressed(keyCode, scanCode, modifiers);
 	}
 
 	private void followHover() {
@@ -473,19 +444,11 @@ public final class PhotoPanelScreen extends Screen {
 		openScroll = Mth.clamp(openScroll, 0, Math.max(0, openCell.options().length - rows));
 	}
 
-	private void switchTab(int dir) {
-		activeTab = Math.floorMod(activeTab + dir, tabs.length);
-		modPage = 0;
-		closePopup();
-	}
-
 	@Override
-	public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
-		double mx = event.x();
-		double my = event.y();
+	public boolean mouseClicked(double mx, double my, int button) {
 		int top = this.height - PANEL_H;
-		boolean left = event.button() == 0;
-		boolean mid = event.button() == 2;
+		boolean left = button == 0;
+		boolean mid = button == 2;
 
 		Cell wasOpen = openCell;
 		if (openCell != null) {
@@ -522,22 +485,12 @@ public final class PhotoPanelScreen extends Screen {
 		}
 
 		if (my >= top && my < top + TABBAR_H) {
-			if (left && mx >= resetAllBtnX0 && mx < resetAllBtnX1) {
+			if (left && mx >= resetBtnX0 && mx < resetBtnX1) {
 				PhotoModeSession.resetPhotoSettings();
 				Framing.resetOutput();
 				DisplayAids.resetAll();
 				CameraSounds.resetClick();
 				announce("All settings reset");
-				return true;
-			}
-			if (left && mx >= resetPageBtnX0 && mx < resetPageBtnX1) {
-				for (Cell c : currentCells()) {
-					if (c.includeInPageReset()) {
-						c.reset();
-					}
-				}
-				CameraSounds.resetClick();
-				announce(tabs[activeTab].name() + " reset");
 				return true;
 			}
 			for (int i = 0; i < tabs.length; i++) {
@@ -574,11 +527,12 @@ public final class PhotoPanelScreen extends Screen {
 			PhotoModeSession.setFocus((float) (mx / this.width), 1.0f - (float) (my / this.height));
 			return true;
 		}
-		return super.mouseClicked(event, doubleClick);
+		return super.mouseClicked(mx, my, button);
 	}
 
 	@Override
-	public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float a) {
+	public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+		// Deliberately skip super.render()'s dimming background: keep the live scene visible.
 		Font font = this.font;
 		this.lastMouseX = mouseX;
 		this.lastMouseY = mouseY;
@@ -595,7 +549,7 @@ public final class PhotoPanelScreen extends Screen {
 			String name = tabs[i].name().toUpperCase(Locale.ROOT);
 			int w = font.width(name);
 			boolean hot = i == activeTab;
-			graphics.text(font, name, tx, top + 5, hot ? ACCENT : TAB_DIM, false);
+			graphics.drawString(font, name, tx, top + 5, hot ? ACCENT : TAB_DIM, false);
 			if (hot) {
 				graphics.fill(tx, top + TABBAR_H - 2, tx + w, top + TABBAR_H - 1, ACCENT);
 			}
@@ -604,25 +558,17 @@ public final class PhotoPanelScreen extends Screen {
 			tx += w + 18;
 		}
 
-		int ralw = font.width(RESET_ALL_LABEL);
-		int ralx = this.width - ralw - 10;
-		boolean resetAllHot = mouseX >= ralx - 4 && mouseX < this.width - 6
+		int rlw = font.width(RESET_LABEL);
+		int rlx = this.width - rlw - 10;
+		boolean resetHot = mouseX >= rlx - 4 && mouseX < this.width - 6
 				&& mouseY >= top && mouseY < top + TABBAR_H;
-		graphics.text(font, RESET_ALL_LABEL, ralx, top + 5, resetAllHot ? ACCENT : TAB_DIM, false);
-		resetAllBtnX0 = ralx - 4;
-		resetAllBtnX1 = this.width - 6;
-
-		int rplw = font.width(RESET_PAGE_LABEL);
-		int rplx = ralx - rplw - 14;
-		boolean resetPageHot = mouseX >= rplx - 4 && mouseX < ralx - 8
-				&& mouseY >= top && mouseY < top + TABBAR_H;
-		graphics.text(font, RESET_PAGE_LABEL, rplx, top + 5, resetPageHot ? ACCENT : TAB_DIM, false);
-		resetPageBtnX0 = rplx - 4;
-		resetPageBtnX1 = ralx - 8;
+		graphics.drawString(font, RESET_LABEL, rlx, top + 5, resetHot ? ACCENT : TAB_DIM, false);
+		resetBtnX0 = rlx - 4;
+		resetBtnX1 = this.width - 6;
 
 		// --- at-a-glance settings, on its own line just above the panel ---
 		String summary = summaryLine();
-		graphics.text(font, summary, (this.width - font.width(summary)) / 2, top - 11, SUMMARY_COLOR, true);
+		graphics.drawString(font, summary, (this.width - font.width(summary)) / 2, top - 11, SUMMARY_COLOR, true);
 
 		// --- controls for the active tab ---
 		hoveredCell = cellAt(mouseX, mouseY);
@@ -653,8 +599,8 @@ public final class PhotoPanelScreen extends Screen {
 			boolean locked = cellLocked(c);
 			boolean active = (hov || isSel || isOpen) && !locked;
 			String value = locked ? c.value() + " · A" : (active ? "‹ " + c.value() + " ›" : c.value());
-			graphics.text(font, label, cx - font.width(label) / 2, rowTop + 9, LABEL_COLOR, false);
-			graphics.text(font, value, cx - font.width(value) / 2, rowTop + 22,
+			graphics.drawString(font, label, cx - font.width(label) / 2, rowTop + 9, LABEL_COLOR, false);
+			graphics.drawString(font, value, cx - font.width(value) / 2, rowTop + 22,
 					locked ? HINT_COLOR : (active ? ACCENT : VALUE_COLOR), true);
 		}
 
@@ -665,10 +611,10 @@ public final class PhotoPanelScreen extends Screen {
 			graphics.fill(rowRight, rowTop + 6, rowRight + 1, this.height - 6, DIVIDER);
 			int acx = (rowRight + this.width) / 2;
 			String arrow = modPage == 0 ? "›" : "‹";      // flips so it reads "go back"
-			graphics.text(font, arrow, acx - font.width(arrow) / 2, rowTop + 12,
+			graphics.drawString(font, arrow, acx - font.width(arrow) / 2, rowTop + 12,
 					aHot ? ACCENT : VALUE_COLOR, false);
 			String pg = (modPage + 1) + "/" + modPageCount();
-			graphics.text(font, pg, acx - font.width(pg) / 2, rowTop + 26, LABEL_COLOR, false);
+			graphics.drawString(font, pg, acx - font.width(pg) / 2, rowTop + 26, LABEL_COLOR, false);
 		}
 
 		if (isRecipeEditor()) {
@@ -680,7 +626,7 @@ public final class PhotoPanelScreen extends Screen {
 		}
 	}
 
-	private void drawSidebar(GuiGraphicsExtractor graphics, Font font, Cell[] cs, int sel) {
+	private void drawSidebar(GuiGraphics graphics, Font font, Cell[] cs, int sel) {
 		int[] g = sidebarGeom();
 		int x0 = g[0];
 		int rowsY0 = g[1];
@@ -694,7 +640,7 @@ public final class PhotoPanelScreen extends Screen {
 		graphics.fill(x0, y0, x0 + 1, bottomY, BORDER);
 
 		int slot = CustomRecipes.editingSlot(PhotoModeSession.getRecipeIndex());
-		graphics.text(font, CustomRecipes.slotName(slot).toUpperCase(Locale.ROOT),
+		graphics.drawString(font, CustomRecipes.slotName(slot).toUpperCase(Locale.ROOT),
 				x0 + SIDEBAR_PAD, y0 + 5, ACCENT, false);
 
 		int rlw = font.width(SB_RESET_LABEL);
@@ -704,7 +650,7 @@ public final class PhotoPanelScreen extends Screen {
 		sbHeadY1 = rowsY0;
 		boolean resetHot = lastMouseX >= sbResetX0 && lastMouseX < sbResetX1
 				&& lastMouseY >= sbHeadY0 && lastMouseY < sbHeadY1;
-		graphics.text(font, SB_RESET_LABEL, sbResetX0 + 2, y0 + 5,
+		graphics.drawString(font, SB_RESET_LABEL, sbResetX0 + 2, y0 + 5,
 				resetHot ? ACCENT : TAB_DIM, false);
 
 		for (int r = 0; r < count; r++) {
@@ -719,8 +665,8 @@ public final class PhotoPanelScreen extends Screen {
 			}
 			String label = c.label().toUpperCase(Locale.ROOT);
 			String value = c.value();
-			graphics.text(font, label, x0 + SIDEBAR_PAD, ry + 3, LABEL_COLOR, false);
-			graphics.text(font, value, this.width - SIDEBAR_PAD - font.width(value), ry + 3,
+			graphics.drawString(font, label, x0 + SIDEBAR_PAD, ry + 3, LABEL_COLOR, false);
+			graphics.drawString(font, value, this.width - SIDEBAR_PAD - font.width(value), ry + 3,
 					active ? ACCENT : VALUE_COLOR, false);
 		}
 	}
@@ -741,7 +687,7 @@ public final class PhotoPanelScreen extends Screen {
 		return currentCells()[SIDEBAR_FIRST + r];
 	}
 
-	private void drawPopup(GuiGraphicsExtractor graphics, Font font, int panelTop, int mouseX, int mouseY) {
+	private void drawPopup(GuiGraphics graphics, Font font, int panelTop, int mouseX, int mouseY) {
 		Cell[] cs = currentCells();
 		int idx = -1;
 		for (int i = 0; i < cs.length; i++) {
@@ -797,7 +743,7 @@ public final class PhotoPanelScreen extends Screen {
 			} else if (cur) {
 				graphics.fill(px, iy, px + pw, iy + POPUP_ITEM_H, SELECT_FILL);
 			}
-			graphics.text(font, opts[oi], px + 6, iy + 2, cur ? ACCENT : VALUE_COLOR, false);
+			graphics.drawString(font, opts[oi], px + 6, iy + 2, cur ? ACCENT : VALUE_COLOR, false);
 		}
 
 		// more-above / more-below ticks
@@ -816,7 +762,7 @@ public final class PhotoPanelScreen extends Screen {
 
 	private void announce(String text) {
 		if (this.minecraft.player != null) {
-			this.minecraft.player.sendOverlayMessage(Component.literal(text));
+			this.minecraft.player.displayClientMessage(Component.literal(text), true);
 		}
 	}
 
@@ -854,51 +800,6 @@ public final class PhotoPanelScreen extends Screen {
 			IntConsumer select, IntConsumer step, Runnable reset) {
 		return cell(label, () -> options[Mth.clamp(index.getAsInt(), 0, options.length - 1)],
 				options, index, select, step, reset);
-	}
-
-	/** Wraps a cell so "Reset Page" skips it (see {@link Cell#includeInPageReset}). */
-	private static Cell excludedFromPageReset(Cell c) {
-		return new Cell() {
-			@Override
-			public String label() {
-				return c.label();
-			}
-
-			@Override
-			public String value() {
-				return c.value();
-			}
-
-			@Override
-			public String[] options() {
-				return c.options();
-			}
-
-			@Override
-			public int index() {
-				return c.index();
-			}
-
-			@Override
-			public void select(int i) {
-				c.select(i);
-			}
-
-			@Override
-			public void step(int dir) {
-				c.step(dir);
-			}
-
-			@Override
-			public void reset() {
-				c.reset();
-			}
-
-			@Override
-			public boolean includeInPageReset() {
-				return false;
-			}
-		};
 	}
 
 	/** A cell backed by a {@link PhotoConfig.Knob} (live tuning value). */

@@ -11,6 +11,7 @@
     "I": "minecraft:iron_ingot"
   },
   "result": {
-    "id": "realcamera:camera_workbench"
+    "item": "realcamera:camera_workbench",
+    "count": 1
   }
 }

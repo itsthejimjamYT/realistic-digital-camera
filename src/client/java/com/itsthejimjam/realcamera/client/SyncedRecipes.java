@@ -1,42 +1,37 @@
 package com.itsthejimjam.realcamera.client;
 
-import java.util.Collection;
 import java.util.List;
 
 import com.itsthejimjam.realcamera.PhotoMode;
 import com.itsthejimjam.realcamera.recipe.WorkbenchRecipe;
 
-import net.fabricmc.fabric.api.client.recipe.v1.sync.ClientRecipeSynchronizedEvent;
-import net.fabricmc.fabric.api.recipe.v1.sync.SynchronizedRecipes;
-
+import net.minecraft.client.Minecraft;
 import net.minecraft.world.item.crafting.RecipeHolder;
 
 /**
- * Holds the recipe set the server synced to this client (via fabric-recipe-api-v1), so
- * the JEI plugin has a reliable source for {@code realcamera:camera_workbench} recipes
- * regardless of JEI's own internal recipe cache/timing.
+ * Source of {@code realcamera:camera_workbench} recipes for the JEI plugin.
+ *
+ * <p>26.2 tracks these via {@code fabric-recipe-api-v1}'s client recipe-sync event,
+ * which doesn't exist on 1.20.4's Fabric API. Not needed here either: vanilla already
+ * sends the full recipe set to every client on join (that's what powers the recipe
+ * book), so the client's own {@code RecipeManager} is a perfectly reliable source —
+ * just read it directly, no separate tracking class required.
  */
 public final class SyncedRecipes {
-
-	private static volatile SynchronizedRecipes synced;
 
 	private SyncedRecipes() {
 	}
 
 	public static void init() {
-		ClientRecipeSynchronizedEvent.EVENT.register((mc, recipes) -> {
-			synced = recipes;
-			PhotoMode.LOGGER.info("[Photo Mode] client synced {} lens-workbench recipes",
-					workbenchRecipes().size());
-		});
+		// No-op on 1.20.4 — see the class doc. Kept as a call site so PhotoModeClient
+		// doesn't need a version-specific branch.
 	}
 
 	public static List<RecipeHolder<WorkbenchRecipe>> workbenchRecipes() {
-		SynchronizedRecipes s = synced;
-		if (s == null) {
+		var level = Minecraft.getInstance().level;
+		if (level == null) {
 			return List.of();
 		}
-		Collection<RecipeHolder<WorkbenchRecipe>> c = s.getAllOfType(PhotoMode.WORKBENCH_RECIPE_TYPE);
-		return List.copyOf(c);
+		return level.getRecipeManager().getAllRecipesFor(PhotoMode.WORKBENCH_RECIPE_TYPE);
 	}
 }

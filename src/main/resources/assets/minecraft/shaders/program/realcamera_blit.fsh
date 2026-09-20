@@ -1,31 +1,27 @@
 #version 330
 
-uniform sampler2D InSampler;
+uniform sampler2D DiffuseSampler;
 
-layout(std140) uniform FilmConfig {
-    float ExposureMult;   // combined EV from the exposure triangle, as a linear multiplier
-    float GrainAmount;    // 0..1, from ISO
-    float GrainDensity;   // grain cells across the frame height
-    float WhiteBalance;   // signed R/B channel shift: + warms, - cools
-};
+// FilmConfig
+uniform float ExposureMult;   // combined EV from the exposure triangle, as a linear multiplier
+uniform float GrainAmount;    // 0..1, from ISO
+uniform float GrainDensity;   // grain cells across the frame height
+uniform float WhiteBalance;   // signed R/B channel shift: + warms, - cools
 
-layout(std140) uniform GradeConfig {
-    vec4 G0;   // x highlight(-2..4)  y shadow(-2..4)  z color(-4..4)  w clarity(-5..5)
-    vec4 G1;   // x colorChrome(0..1)  y fxBlue(0..1)  z drCompress(0..1)  w fade(0..0.3)
-    vec4 G2;   // x wbShiftR(-9..9)  y wbShiftB(-9..9)  z monoToneWarm(-9..9)  w mono(0/1)
-    vec4 G3;   // x baseContrast  y basePivot  z baseSat  w strength (0 = off)
-    vec4 G4;   // xyz film-sim colour cast (mul)   w grain boost
-    vec4 G5;   // x grain "large" flag (0/1)   yzw spare
-    vec4 G6;   // xyz split-tone shadow push    w split amount (0 = off)
-    vec4 G7;   // xyz split-tone highlight push  w split balance (reserved)
-};
+// GradeConfig
+uniform vec4 G0;   // x highlight(-2..4)  y shadow(-2..4)  z color(-4..4)  w clarity(-5..5)
+uniform vec4 G1;   // x colorChrome(0..1)  y fxBlue(0..1)  z drCompress(0..1)  w fade(0..0.3)
+uniform vec4 G2;   // x wbShiftR(-9..9)  y wbShiftB(-9..9)  z monoToneWarm(-9..9)  w mono(0/1)
+uniform vec4 G3;   // x baseContrast  y basePivot  z baseSat  w strength (0 = off)
+uniform vec4 G4;   // xyz film-sim colour cast (mul)   w grain boost
+uniform vec4 G5;   // x grain "large" flag (0/1)   y polarizer  z mist  w handheld shake
+uniform vec4 G6;   // xyz split-tone shadow push    w split amount (0 = off)
+uniform vec4 G7;   // xyz split-tone highlight push  w split balance (reserved)
 
-layout(std140) uniform AidConfig {
-    float Zebras;   // 0/1 blown-highlight warning (preview only)
-    float Peaking;  // 0/1 focus peaking (preview only)
-    float AidTime;  // seconds, animates the zebra stripes
-    float _aidpad;
-};
+// AidConfig
+uniform float Zebras;   // 0/1 blown-highlight warning (preview only)
+uniform float Peaking;  // 0/1 focus peaking (preview only)
+uniform float AidTime;  // seconds, animates the zebra stripes
 
 in vec2 texCoord;
 
@@ -128,7 +124,7 @@ float grainCell(vec2 gp) {
 }
 
 // Finishing pass. (1) Cleanup: melt the DoF gather's residual noise in blurred
-// regions — InSampler.a is the blur amount (0 = sharp, untouched). (2) Film:
+// regions — DiffuseSampler.a is the blur amount (0 = sharp, untouched). (2) Film:
 // exposure-triangle multiplier, camera response, film recipe, then ISO grain.
 void main() {
     // Handheld slow-shutter smear (G5.w, capture only): average along a tilted axis
@@ -136,24 +132,24 @@ void main() {
     vec4 c;
     float shake = G5.w;
     if (shake > 0.001) {
-        vec2 spx = 1.0 / vec2(textureSize(InSampler, 0));
-        float span = shake * float(textureSize(InSampler, 0).y) * 0.009;
+        vec2 spx = 1.0 / vec2(textureSize(DiffuseSampler, 0));
+        float span = shake * float(textureSize(DiffuseSampler, 0).y) * 0.009;
         vec2 dir = normalize(vec2(0.93, 0.36));
         vec4 acc = vec4(0.0);
         const int NS = 9;
         for (int i = 0; i < NS; i++) {
             float t = (float(i) / float(NS - 1) - 0.5) * 2.0;
-            acc += texture(InSampler, texCoord + dir * (t * span) * spx);
+            acc += texture(DiffuseSampler, texCoord + dir * (t * span) * spx);
         }
         c = acc / float(NS);
     } else {
-        c = texture(InSampler, texCoord);
+        c = texture(DiffuseSampler, texCoord);
     }
     float amt = c.a;   // circle of confusion (0 = in focus)
     vec3 rgb = c.rgb;
 
     if (amt >= 0.03) {
-        vec2 spx = 1.0 / vec2(textureSize(InSampler, 0));
+        vec2 spx = 1.0 / vec2(textureSize(DiffuseSampler, 0));
         float rad = mix(0.7, 2.4, amt);
         vec3 sum = rgb;
         float wsum = 1.0;
@@ -161,7 +157,7 @@ void main() {
         for (int i = 0; i < N; i++) {
             float a = float(i) * 2.399963;
             float r = sqrt((float(i) + 0.5) / float(N)) * rad;
-            sum += texture(InSampler, texCoord + vec2(cos(a), sin(a)) * r * spx).rgb;
+            sum += texture(DiffuseSampler, texCoord + vec2(cos(a), sin(a)) * r * spx).rgb;
             wsum += 1.0;
         }
         rgb = sum / wsum;
@@ -207,11 +203,11 @@ void main() {
     float mist = G5.z;
     if (mist > 0.001) {
         // Bloom: a soft halo pulled from bright neighbours.
-        vec2 mpx = 1.0 / vec2(textureSize(InSampler, 0));
+        vec2 mpx = 1.0 / vec2(textureSize(DiffuseSampler, 0));
         vec3 bloom = vec3(0.0);
         for (int i = 0; i < 8; i++) {
             float a = float(i) * 0.7853982;
-            vec3 s = texture(InSampler, texCoord + vec2(cos(a), sin(a)) * 4.0 * mpx).rgb;
+            vec3 s = texture(DiffuseSampler, texCoord + vec2(cos(a), sin(a)) * 4.0 * mpx).rgb;
             bloom += s * smoothstep(0.45, 1.0, dot(s, LUMA));
         }
         rgb += bloom * (mist * 0.14);
@@ -221,11 +217,11 @@ void main() {
 
     // Clarity: midtone local contrast. Negative = the soft, dreamy film look.
     if (abs(G0.w) > 0.01) {
-        vec2 cpx = 1.0 / vec2(textureSize(InSampler, 0));
+        vec2 cpx = 1.0 / vec2(textureSize(DiffuseSampler, 0));
         vec3 lc = vec3(0.0);
         for (int i = 0; i < 8; i++) {
             float a = float(i) * 0.7853982;
-            lc += texture(InSampler, texCoord + vec2(cos(a), sin(a)) * 6.0 * cpx).rgb;
+            lc += texture(DiffuseSampler, texCoord + vec2(cos(a), sin(a)) * 6.0 * cpx).rgb;
         }
         lc *= 0.125;
         float lm = dot(rgb, LUMA);
@@ -249,7 +245,7 @@ void main() {
     // height so grain survives high-res capture + downsample instead of averaging away.
     float grainAmt = max(GrainAmount, G4.w);
     if (grainAmt > 0.001) {
-        vec2 res = vec2(textureSize(InSampler, 0));
+        vec2 res = vec2(textureSize(DiffuseSampler, 0));
         float density = G5.x > 0.5 ? GrainDensity * 0.5 : GrainDensity;   // "large" = fewer, bigger cells
         float cell = max(res.y / max(density, 1.0), 1.0);
         vec2 gp = texCoord * res / cell;
@@ -263,10 +259,10 @@ void main() {
 
     // --- preview-only viewfinder aids (AidParams forces these to 0 during capture) ---
     if (Peaking > 0.5) {
-        vec2 px = 1.0 / vec2(textureSize(InSampler, 0));
-        float l0 = dot(texture(InSampler, texCoord).rgb, vec3(0.299, 0.587, 0.114));
-        float lx = dot(texture(InSampler, texCoord + vec2(px.x, 0.0)).rgb, vec3(0.299, 0.587, 0.114));
-        float ly = dot(texture(InSampler, texCoord + vec2(0.0, px.y)).rgb, vec3(0.299, 0.587, 0.114));
+        vec2 px = 1.0 / vec2(textureSize(DiffuseSampler, 0));
+        float l0 = dot(texture(DiffuseSampler, texCoord).rgb, vec3(0.299, 0.587, 0.114));
+        float lx = dot(texture(DiffuseSampler, texCoord + vec2(px.x, 0.0)).rgb, vec3(0.299, 0.587, 0.114));
+        float ly = dot(texture(DiffuseSampler, texCoord + vec2(0.0, px.y)).rgb, vec3(0.299, 0.587, 0.114));
         float edge = abs(l0 - lx) + abs(l0 - ly);
         // Only mark pixels in the actual focus plane (CoC ~0). Blurred regions and the
         // sky sentinel (amt >= ~1.0) are excluded, so distant sharp terrain and sky
@@ -277,7 +273,7 @@ void main() {
     if (Zebras > 0.5) {
         float mx = max(max(outc.r, outc.g), outc.b);
         if (mx > 0.985) {
-            vec2 res = vec2(textureSize(InSampler, 0));
+            vec2 res = vec2(textureSize(DiffuseSampler, 0));
             float d = texCoord.x * res.x + texCoord.y * res.y - AidTime * 40.0;
             float s = step(0.5, fract(d / 14.0));
             outc = mix(outc, vec3(s), 0.55);

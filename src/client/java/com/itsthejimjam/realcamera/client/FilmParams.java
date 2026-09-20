@@ -1,36 +1,30 @@
 package com.itsthejimjam.realcamera.client;
 
-import java.nio.ByteBuffer;
-import java.util.Map;
+import java.util.List;
 
 import com.itsthejimjam.realcamera.PhotoMode;
 import com.itsthejimjam.realcamera.client.mixin.PostChainAccessor;
-import com.itsthejimjam.realcamera.client.mixin.PostPassAccessor;
-import com.mojang.blaze3d.buffers.GpuBuffer;
-import com.mojang.blaze3d.buffers.Std140Builder;
-import com.mojang.blaze3d.systems.RenderSystem;
 
+import net.minecraft.client.renderer.EffectInstance;
 import net.minecraft.client.renderer.PostChain;
 import net.minecraft.client.renderer.PostPass;
-
-import org.lwjgl.system.MemoryUtil;
 
 /**
  * Film-recipe engine, modelled on modern in-camera film simulations. A recipe is a
  * {@linkplain FilmBase film-simulation base} plus the per-recipe knobs — Dynamic
  * Range, Highlight / Shadow tone, Color, Clarity, Color Chrome + FX Blue, WB Shift,
- * Grain, and a matte "Fade". These are written into the finishing pass's
- * {@code GradeConfig} block (same buffer-swap approach as {@link DofParams} /
- * {@link ExposureParams}); the shader's {@code applyGrade} turns them into a look.
+ * Grain, and a matte "Fade".
  *
- * <p>The built-in list holds a spread of classic photographic looks. Custom slots ({@link CustomRecipes}) use the exact same model, so "Copy
- * From" is a clean copy rather than an approximation.
+ * <p>The built-in list holds a spread of classic photographic looks. Custom slots
+ * ({@link CustomRecipes}) use the exact same model, so "Copy From" is a clean copy
+ * rather than an approximation.
+ *
+ * <p>1.20.4 has no {@code GpuBuffer}/std140 uniform-buffer system — {@code apply(...)}
+ * sets the {@code G0}..{@code G7} uniforms directly on the {@code blit} pass's
+ * {@code EffectInstance} (via {@link PostChainAccessor}), instead of writing one shared
+ * byte-layout block.
  */
 public final class FilmParams {
-	private static final String BLOCK = "GradeConfig";
-	/** std140: vec4 × 8 = 128 bytes. */
-	private static final int SIZE = 128;
-	private static final ByteBuffer SCRATCH = MemoryUtil.memAlloc(SIZE);
 
 	// ------------------------------------------------------------------ enums
 
@@ -238,8 +232,6 @@ public final class FilmParams {
 		return RECIPES[Math.floorMod(i, RECIPES.length)].name();
 	}
 
-	private static GpuBuffer buffer;
-
 	private FilmParams() {
 	}
 
@@ -269,38 +261,6 @@ public final class FilmParams {
 		s.splitAmt = r.splitAmt().ordinal();
 	}
 
-	/** Physical / panel filters, packed into GradeConfig.G5.yz for {@code blit.fsh}. */
-	private static float filterPolarizer = 0.0f;
-	private static float filterMist = 0.0f;
-
-	public static void apply(PostChain chain, int recipeIndex, float userStrength) {
-		apply(chain, recipeIndex, userStrength, 0.0f, 0.0f);
-	}
-
-	public static void apply(PostChain chain, int recipeIndex, float userStrength,
-			float polarizer, float mist) {
-		if (!ensureBuffer(chain)) {
-			return;
-		}
-		filterPolarizer = Math.max(0.0f, Math.min(1.0f, polarizer));
-		filterMist = Math.max(0.0f, Math.min(1.0f, mist));
-		int idx = Math.floorMod(recipeIndex, RECIPE_COUNT);
-
-		if (idx < RECIPES.length) {
-			FilmRecipe r = RECIPES[idx];
-			write(r.base(), r.dr(), r.highlight(), r.shadow(), r.color(), r.clarity(),
-					r.chrome(), r.fxBlue(), r.wbR(), r.wbB(), r.grain(), r.grainLarge(),
-					r.fade(), r.monoToneWarm(), r.split(), r.splitAmt(),
-					r.strength() * Math.max(0.0f, userStrength));
-		} else {
-			CustomRecipes.Slot s = CustomRecipes.slot(idx - RECIPES.length);
-			write(base(s.base), dr(s.dr), s.highlight, s.shadow, s.color, s.clarity,
-					tri(s.chrome), tri(s.fxBlue), s.wbR, s.wbB, tri(s.grain), s.grainLarge,
-					s.fade, s.monoToneWarm, splitTone(s.split), tri(s.splitAmt),
-					Math.max(0.0f, userStrength));
-		}
-	}
-
 	private static FilmBase base(int i) {
 		FilmBase[] v = FilmBase.values();
 		return v[Math.floorMod(i, v.length)];
@@ -321,56 +281,68 @@ public final class FilmParams {
 		return v[Math.floorMod(i, v.length)];
 	}
 
-	private static void write(FilmBase b, DR dr, float highlight, float shadow, int color, int clarity,
-			Tri chrome, Tri fxBlue, int wbR, int wbB, Tri grain, boolean grainLarge,
-			float fade, int monoToneWarm, SplitTone split, Tri splitAmt, float strength) {
+	/** Physical / panel filters, packed into G5.yz for {@code blit.fsh}. */
+	private static float filterPolarizer = 0.0f;
+	private static float filterMist = 0.0f;
+
+	public static void apply(PostChain chain, int recipeIndex, float userStrength) {
+		apply(chain, recipeIndex, userStrength, 0.0f, 0.0f);
+	}
+
+	public static void apply(PostChain chain, int recipeIndex, float userStrength,
+			float polarizer, float mist) {
+		List<PostPass> passes;
+		try {
+			passes = ((PostChainAccessor) chain).realcamera$passes();
+		} catch (Throwable t) {
+			PhotoMode.LOGGER.warn("[Photo Mode] Grade pass lookup failed: {}", t.toString());
+			return;
+		}
+		if (passes == null || passes.size() < 4) {
+			return;
+		}
+		EffectInstance blit = passes.get(3).getEffect();
+		if (blit == null) {
+			return;
+		}
+
+		filterPolarizer = Math.max(0.0f, Math.min(1.0f, polarizer));
+		filterMist = Math.max(0.0f, Math.min(1.0f, mist));
+		int idx = Math.floorMod(recipeIndex, RECIPE_COUNT);
+
+		if (idx < RECIPES.length) {
+			FilmRecipe r = RECIPES[idx];
+			write(blit, r.base(), r.dr(), r.highlight(), r.shadow(), r.color(), r.clarity(),
+					r.chrome(), r.fxBlue(), r.wbR(), r.wbB(), r.grain(), r.grainLarge(),
+					r.fade(), r.monoToneWarm(), r.split(), r.splitAmt(),
+					r.strength() * Math.max(0.0f, userStrength));
+		} else {
+			CustomRecipes.Slot s = CustomRecipes.slot(idx - RECIPES.length);
+			write(blit, base(s.base), dr(s.dr), s.highlight, s.shadow, s.color, s.clarity,
+					tri(s.chrome), tri(s.fxBlue), s.wbR, s.wbB, tri(s.grain), s.grainLarge,
+					s.fade, s.monoToneWarm, splitTone(s.split), tri(s.splitAmt),
+					Math.max(0.0f, userStrength));
+		}
+	}
+
+	private static void write(EffectInstance blit, FilmBase b, DR dr, float highlight, float shadow,
+			int color, int clarity, Tri chrome, Tri fxBlue, int wbR, int wbB, Tri grain,
+			boolean grainLarge, float fade, int monoToneWarm, SplitTone split, Tri splitAmt,
+			float strength) {
 		if (b.mono) {
 			strength = Math.min(strength, 1.0f);
 		}
 		float grainBoost = grain == Tri.OFF ? 0.0f : grain == Tri.WEAK ? 0.35f : 0.75f;
 		float sAmt = split == SplitTone.OFF ? 0.0f : splitAmt.v;
 
-		SCRATCH.clear();
-		Std140Builder.intoBuffer(SCRATCH)
-				.putVec4(highlight, shadow, color, clarity)
-				.putVec4(chrome.v, fxBlue.v, dr.v, fade)
-				.putVec4(wbR, wbB, monoToneWarm, b.mono ? 1.0f : 0.0f)
-				.putVec4(b.contrast, b.pivot, b.sat, strength)
-				.putVec4(b.tintR, b.tintG, b.tintB, grainBoost)
-				.putVec4(grainLarge ? 1.0f : 0.0f, filterPolarizer, filterMist,
-						PhotoModeSession.captureShakeBlur01())
-				.putVec4(split.sr, split.sg, split.sb, sAmt)
-				.putVec4(split.hr, split.hg, split.hb, 0.0f);
-		SCRATCH.rewind();
-
-		RenderSystem.getDevice().createCommandEncoder().writeToBuffer(buffer.slice(), SCRATCH);
-	}
-
-	/** Make sure the GradeConfig pass is using our writable buffer. */
-	private static boolean ensureBuffer(PostChain chain) {
-		try {
-			for (PostPass pass : ((PostChainAccessor) chain).realcamera$passes()) {
-				Map<String, GpuBuffer> uniforms = ((PostPassAccessor) pass).realcamera$customUniforms();
-				GpuBuffer current = uniforms.get(BLOCK);
-				if (current == null) {
-					continue;
-				}
-				if (current == buffer) {
-					return true;
-				}
-				if (buffer == null) {
-					buffer = RenderSystem.getDevice().createBuffer(
-							() -> "realcamera GradeConfig",
-							GpuBuffer.USAGE_UNIFORM | GpuBuffer.USAGE_COPY_DST,
-							(long) SIZE);
-				}
-				uniforms.put(BLOCK, buffer);
-				current.close();
-				return true;
-			}
-		} catch (Throwable t) {
-			PhotoMode.LOGGER.warn("[Photo Mode] Grade uniform setup failed: {}", t.toString());
-		}
-		return false;
+		blit.safeGetUniform("G0").set(highlight, shadow, color, clarity);
+		blit.safeGetUniform("G1").set(chrome.v, fxBlue.v, dr.v, fade);
+		blit.safeGetUniform("G2").set(wbR, wbB, monoToneWarm, b.mono ? 1.0f : 0.0f);
+		blit.safeGetUniform("G3").set(b.contrast, b.pivot, b.sat, strength);
+		blit.safeGetUniform("G4").set(b.tintR, b.tintG, b.tintB, grainBoost);
+		blit.safeGetUniform("G5").set(grainLarge ? 1.0f : 0.0f, filterPolarizer, filterMist,
+				PhotoModeSession.captureShakeBlur01());
+		blit.safeGetUniform("G6").set(split.sr, split.sg, split.sb, sAmt);
+		blit.safeGetUniform("G7").set(split.hr, split.hg, split.hb, 0.0f);
 	}
 }

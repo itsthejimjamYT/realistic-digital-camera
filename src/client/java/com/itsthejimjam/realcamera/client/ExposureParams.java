@@ -1,40 +1,30 @@
 package com.itsthejimjam.realcamera.client;
 
-import java.nio.ByteBuffer;
-import java.util.Map;
+import java.util.List;
 
 import com.itsthejimjam.realcamera.PhotoMode;
 import com.itsthejimjam.realcamera.client.mixin.PostChainAccessor;
-import com.itsthejimjam.realcamera.client.mixin.PostPassAccessor;
-import com.mojang.blaze3d.buffers.GpuBuffer;
-import com.mojang.blaze3d.buffers.Std140Builder;
-import com.mojang.blaze3d.systems.RenderSystem;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.renderer.EffectInstance;
 import net.minecraft.client.renderer.PostChain;
 import net.minecraft.client.renderer.PostPass;
 import net.minecraft.util.Mth;
 
-import org.lwjgl.system.MemoryUtil;
-
 /**
- * Live "film" settings for the finishing pass of the DoF post chain: overall
- * exposure from the ISO / shutter / aperture triangle plus a compensation dial,
- * and ISO-driven grain. Same buffer-swap trick as {@link DofParams} — the pass's
- * own uniform buffer isn't a valid copy target, so we swap in our own and rewrite
- * it each frame.
+ * Live "film" settings for the finishing pass: overall exposure from the ISO / shutter /
+ * aperture triangle plus a compensation dial, and ISO-driven grain.
  *
  * <p>Baseline is f/2.8 · 1/1000 s · ISO 100 — a well-exposed midday frame under a
  * shader pack, referenced to modern mirrorless. Stopping the aperture down or using
  * a faster shutter darkens the frame; opening up, a slower shutter, or a higher ISO
  * brightens it — exactly like balancing a real exposure.
+ *
+ * <p>1.20.4: no std140 buffer — uniforms are set directly on the {@code blit} pass's
+ * {@code EffectInstance} (index 3 of the chain).
  */
 public final class ExposureParams {
-	private static final String BLOCK = "FilmConfig";
-	/** std140: float × 4 = 16 bytes. */
-	private static final int SIZE = 16;
-	private static final ByteBuffer SCRATCH = MemoryUtil.memAlloc(SIZE);
 
 	/** Overall level at the baseline settings (f/2.8 · 1/1000 · ISO 100). 0 = neutral. */
 	private static final double CALIBRATION_EV = 0.0;
@@ -72,8 +62,6 @@ public final class ExposureParams {
 	/** Stops past the (configurable) onset ISO over which grain climbs to full. */
 	private static final double GRAIN_RANGE_STOPS = 4.0;
 
-	private static GpuBuffer buffer;
-
 	private ExposureParams() {
 	}
 
@@ -87,12 +75,20 @@ public final class ExposureParams {
 	}
 
 	/** 0..~1 real scene light: 1 in full daylight, {@link #NIGHT_FLOOR} at deep night,
-	 *  with a little moonlight lift; drops in rain / thunder via getSkyDarken. */
+	 *  with a little moonlight lift; drops in rain / thunder via the vanilla sky-darken. */
 	private static double sceneLight() {
 		ClientLevel level = Minecraft.getInstance().level;
 		if (level == null) {
 			return 1.0;
 		}
+		// level.getSkyDarken() — the plain no-arg getter 26.2 uses — returns the raw 0..11
+		// vanilla field (0 = day, 11 = night). ClientLevel ALSO has a same-named
+		// getSkyDarken(float partialTick) overload with a completely different, unrelated
+		// range (~0.2 at night .. ~1.0 at day, vanilla's per-frame sky/fog blend factor,
+		// confirmed via javap on ClientLevel's actual bytecode) — the 1.20.4 port picked
+		// that overload by mistake. Dividing THAT by 11 collapses day and night to nearly
+		// the same tiny fraction, so this always evaluated to ~0.95-1.0 regardless of the
+		// actual time of day and the night-darkening feature never engaged.
 		double daylight = 1.0 - Mth.clamp(level.getSkyDarken() / 11.0, 0.0, 1.0);
 		double night = 1.0 - daylight;
 		return Mth.clamp(NIGHT_FLOOR + (1.0 - NIGHT_FLOOR) * daylight + night * MOON_GAIN, NIGHT_FLOOR, 1.1);
@@ -106,42 +102,15 @@ public final class ExposureParams {
 	/** {@code ndStops} — a physical ND filter, a clean minus-N stops on the final exposure. */
 	public static void apply(PostChain chain, float aperture, double shutterSeconds, int iso,
 			float expComp, float whiteBalance, float ndStops) {
-		if (!ensureBuffer(chain)) {
+		List<PostPass> passes = passes(chain);
+		if (passes == null || passes.size() < 4) {
+			return;
+		}
+		EffectInstance blit = passes.get(3).getEffect();
+		if (blit == null) {
 			return;
 		}
 
-		float exposureMult = exposureMultiplier(aperture, shutterSeconds, iso, expComp, ndStops);
-
-		// Grain onset is keyed to the true ISO stops, not the weighted exposure. The ISO
-		// at which grain starts, its strength and its cell size are all user-tunable.
-		double log2 = Math.log(2.0);
-		double isoStops = Math.log(Math.max(iso, 1) / 100.0) / log2;
-		com.itsthejimjam.realcamera.client.config.PhotoConfig cfg =
-				com.itsthejimjam.realcamera.client.config.PhotoConfig.get();
-		double grainThresholdStops = Math.log(cfg.grainOnsetIso() / 100.0) / log2;
-		double gOver = (isoStops - grainThresholdStops) / GRAIN_RANGE_STOPS;
-		float grain = (float) Math.pow(Math.max(0.0, Math.min(1.0, gOver)), 1.1);
-		grain = Math.max(0.0f, Math.min(3.0f, grain * cfg.grainAmount()));
-		float grainDensity = GRAIN_DENSITY / cfg.grainSize();
-
-		float wb = whiteBalanceShift(whiteBalance);
-
-		SCRATCH.clear();
-		Std140Builder.intoBuffer(SCRATCH)
-				.putFloat(exposureMult)
-				.putFloat(grain)
-				.putFloat(grainDensity)
-				.putFloat(wb);
-		SCRATCH.rewind();
-
-		RenderSystem.getDevice().createCommandEncoder().writeToBuffer(buffer.slice(), SCRATCH);
-	}
-
-	/** The camera-accurate exposure multiplier (aperture/shutter/ISO/comp/ND, scene-light
-	 *  compensated) — factored out so the high-precision capture pass (see HdrCapture) can
-	 *  compute the exact same value without a second, drifting copy of this formula. */
-	public static float exposureMultiplier(float aperture, double shutterSeconds, int iso,
-			float expComp, float ndStops) {
 		double log2 = Math.log(2.0);
 		double apStops = -2.0 * Math.log(Math.max(aperture, 0.5f) / 2.8) / log2;
 		double shStops = Math.log(Math.max(shutterSeconds, 1e-6) / SHUTTER_BASE_S) / log2;
@@ -157,39 +126,33 @@ public final class ExposureParams {
 		// so a +2 EV frame is genuinely 4x the base exposure across the whole tonal range,
 		// not squashed by the soft shoulder.
 		double biasedEV = totalEV + PhotoCapture.bracketBiasEv() - ndStops;
-		return (float) (Math.pow(2.0, biasedEV) * sceneLight());
+		float exposureMult = (float) (Math.pow(2.0, biasedEV) * sceneLight());
+
+		// Grain onset is keyed to the true ISO stops, not the weighted exposure. The ISO
+		// at which grain starts, its strength and its cell size are all user-tunable.
+		com.itsthejimjam.realcamera.client.config.PhotoConfig cfg =
+				com.itsthejimjam.realcamera.client.config.PhotoConfig.get();
+		double grainThresholdStops = Math.log(cfg.grainOnsetIso() / 100.0) / log2;
+		double gOver = (isoStops - grainThresholdStops) / GRAIN_RANGE_STOPS;
+		float grain = (float) Math.pow(Math.max(0.0, Math.min(1.0, gOver)), 1.1);
+		grain = Math.max(0.0f, Math.min(3.0f, grain * cfg.grainAmount()));
+		float grainDensity = GRAIN_DENSITY / cfg.grainSize();
+
+		// -1..+1 packed as an R/B channel scale for the shader.
+		float wb = Math.max(-1.0f, Math.min(1.0f, whiteBalance)) * WB_STRENGTH;
+
+		blit.safeGetUniform("ExposureMult").set(exposureMult);
+		blit.safeGetUniform("GrainAmount").set(grain);
+		blit.safeGetUniform("GrainDensity").set(grainDensity);
+		blit.safeGetUniform("WhiteBalance").set(wb);
 	}
 
-	/** -1..+1 packed as an R/B channel scale for the shader. */
-	public static float whiteBalanceShift(float whiteBalance) {
-		return Math.max(-1.0f, Math.min(1.0f, whiteBalance)) * WB_STRENGTH;
-	}
-
-	/** Make sure the FilmConfig pass is using our writable buffer. */
-	private static boolean ensureBuffer(PostChain chain) {
+	private static List<PostPass> passes(PostChain chain) {
 		try {
-			for (PostPass pass : ((PostChainAccessor) chain).realcamera$passes()) {
-				Map<String, GpuBuffer> uniforms = ((PostPassAccessor) pass).realcamera$customUniforms();
-				GpuBuffer current = uniforms.get(BLOCK);
-				if (current == null) {
-					continue;
-				}
-				if (current == buffer) {
-					return true;
-				}
-				if (buffer == null) {
-					buffer = RenderSystem.getDevice().createBuffer(
-							() -> "realcamera FilmConfig",
-							GpuBuffer.USAGE_UNIFORM | GpuBuffer.USAGE_COPY_DST,
-							(long) SIZE);
-				}
-				uniforms.put(BLOCK, buffer);
-				current.close();
-				return true;
-			}
+			return ((PostChainAccessor) chain).realcamera$passes();
 		} catch (Throwable t) {
-			PhotoMode.LOGGER.warn("[Photo Mode] Film uniform setup failed: {}", t.toString());
+			PhotoMode.LOGGER.warn("[Photo Mode] Exposure pass lookup failed: {}", t.toString());
+			return null;
 		}
-		return false;
 	}
 }

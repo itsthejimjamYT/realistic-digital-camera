@@ -12,6 +12,7 @@
     "R": "minecraft:redstone"
   },
   "result": {
-    "id": "realcamera:camera_body"
+    "item": "realcamera:camera_body",
+    "count": 1
   }
 }

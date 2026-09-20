@@ -2,8 +2,15 @@
 
 A Fabric mod that adds a **fully functional digital camera** to Minecraft.
 
-> **This branch (`main-26.2`) targets Minecraft 26.2.** Playing 26.3? Switch to the
-> [`26.3`](../../tree/26.3) branch instead — the install steps below are branch-specific.
+> **This branch (`1.20.4`) targets Minecraft 1.20.4.** Playing 26.2 or 26.3? Switch to the
+> [`main-26.2`](../../tree/main-26.2) or [`26.3`](../../tree/26.3) branch instead — the
+> install steps below are branch-specific.
+>
+> **Depth of field needs a shader pack on this version.** On Minecraft versions before
+> 26.2 the mod can only read scene depth through [Iris](https://modrinth.com/mod/iris), so
+> the real depth-of-field blur works when Iris is running a shader pack. Without one,
+> everything else still works (exposure, white balance, film looks, grain, long exposure,
+> bracketing) — there's just no blur.
 
 Pick an exposure mode, dial in aperture / shutter / ISO (or let the
 camera do it), fit a lens and a filter, choose your focus point, and take a shot that
@@ -35,8 +42,8 @@ renders real optical depth of field. Every photo is written out as a PNG on your
 
 The **camera body** and the **Camera Workbench** itself are crafted at a normal crafting
 table. **Lenses, filters, the tripod and the camera drone** are crafted at the **Camera
-Workbench**. Install [JEI](https://modrinth.com/mod/jei) to browse the recipes in-game —
-its **+** button lays one straight into the bench from your inventory.
+Workbench**. (JEI recipe browsing isn't available on the 1.20.4 version yet — use the
+recipe images below.)
 
 ### Camera body &amp; workbench &nbsp;·&nbsp; *crafting table*
 
@@ -102,13 +109,14 @@ etc.) — the mod does **not** merge them. Combine them yourself in an HDR / pho
 
 ## Install
 
-1. Install [Fabric Loader](https://fabricmc.net/use/installer/) for Minecraft 26.2.
-2. Download the mod `.jar` from the [Releases](../../releases) page — pick the build
-   tagged for 26.2.
-3. Drop it, along with [Fabric API](https://modrinth.com/mod/fabric-api) for 26.2, into
+1. Install [Fabric Loader](https://fabricmc.net/use/installer/) for Minecraft 1.20.4.
+2. There's no packaged Release for 1.20.4 yet — build the jar yourself from this branch
+   (see **Building** below).
+3. Drop it, along with [Fabric API](https://modrinth.com/mod/fabric-api) for 1.20.4, into
    your `mods/` folder.
-4. Optional: **Mod Menu** + **Cloth Config** for the in-game settings screen, and **JEI**
-   for the Camera Workbench recipes.
+4. For depth of field, also install [Iris](https://modrinth.com/mod/iris) and select a
+   shader pack (see the note at the top). [Sodium](https://modrinth.com/mod/sodium) is
+   optional.
 
 ## Controls
 
@@ -124,7 +132,7 @@ Right-click a camera to pick it up. Then:
 
 ## Building
 
-Needs JDK 25.
+Needs JDK 17.
 
 ```
 ./gradlew build

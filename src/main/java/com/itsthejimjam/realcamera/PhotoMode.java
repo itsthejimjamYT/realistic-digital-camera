@@ -2,6 +2,7 @@ package com.itsthejimjam.realcamera;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.function.Function;
 
 import com.itsthejimjam.realcamera.block.CameraWorkbenchBlock;
 import com.itsthejimjam.realcamera.block.TripodBlock;
@@ -11,34 +12,37 @@ import com.itsthejimjam.realcamera.menu.WorkbenchMenu;
 import com.itsthejimjam.realcamera.recipe.WorkbenchRecipe;
 
 import net.fabricmc.api.ModInitializer;
-import net.fabricmc.fabric.api.creativetab.v1.CreativeModeTabEvents;
 import net.fabricmc.fabric.api.event.player.UseItemCallback;
-import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
+import net.fabricmc.fabric.api.itemgroup.v1.ItemGroupEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+import net.fabricmc.fabric.api.object.builder.v1.block.entity.FabricBlockEntityTypeBuilder;
+import net.fabricmc.fabric.api.screenhandler.v1.ScreenHandlerRegistry;
 
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.NonNullList;
-import net.minecraft.network.chat.Component;
-import net.minecraft.world.InteractionResult;
-import net.minecraft.world.SimpleMenuProvider;
 import net.minecraft.core.Registry;
-import net.minecraft.core.component.DataComponentType;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.core.registries.Registries;
-import net.minecraft.resources.Identifier;
-import net.minecraft.resources.ResourceKey;
-import net.minecraft.world.flag.FeatureFlags;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.ContainerHelper;
+import net.minecraft.world.InteractionResultHolder;
+import net.minecraft.world.SimpleMenuProvider;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.CreativeModeTabs;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.component.ItemContainerContents;
 import net.minecraft.world.item.crafting.RecipeSerializer;
 import net.minecraft.world.item.crafting.RecipeType;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.SoundType;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockBehaviour;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.Vec3;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -49,21 +53,18 @@ public class PhotoMode implements ModInitializer {
 
 	private static final Map<Item, LensSpec> LENS_SPECS = new LinkedHashMap<>();
 	private static final Map<Item, FilterSpec> FILTER_SPECS = new LinkedHashMap<>();
-
-	// --- data component: the camera body's installed lens (slot 0) + filter (slot 1) ---
-	public static final DataComponentType<ItemContainerContents> LOADOUT = Registry.register(
-			BuiltInRegistries.DATA_COMPONENT_TYPE, id("loadout"),
-			DataComponentType.<ItemContainerContents>builder()
-					.persistent(ItemContainerContents.CODEC)
-					.networkSynchronized(ItemContainerContents.STREAM_CODEC)
-					.build());
+	/** Stable per-lens index (1-based; 0 = no lens) for the item model's old-style
+	 *  integer CustomModelData — 1.20.4 predates data components, so the "point the
+	 *  camera body's model at the installed lens" trick has to use this instead. */
+	private static final Map<Item, Integer> LENS_MODEL_INDEX = new LinkedHashMap<>();
+	private static final String LOADOUT_KEY = "Loadout";
+	private static final String CUSTOM_MODEL_DATA_KEY = "CustomModelData";
 
 	// --- cameras ---
 	/** Everything built in: walk + flight, continuous zoom, filters as panel toggles. */
 	public static final Item CREATIVE_CAMERA = register("creative_camera", new Item.Properties().stacksTo(1));
 	/** Survival body: takes one lens + one filter (Shift+right-click to load). */
-	public static final Item CAMERA_BODY = register("camera_body",
-			new Item.Properties().stacksTo(1).component(LOADOUT, ItemContainerContents.EMPTY));
+	public static final Item CAMERA_BODY = register("camera_body", new Item.Properties().stacksTo(1));
 	/** Same photo interface, flight movement — for aerial shots. */
 	public static final Item DRONE = register("drone", new Item.Properties().stacksTo(1));
 
@@ -92,18 +93,19 @@ public class PhotoMode implements ModInitializer {
 
 	// --- camera workbench (5x5 crafting) ---
 	public static final Block CAMERA_WORKBENCH = registerBlock("camera_workbench",
-			BlockBehaviour.Properties.of().strength(2.5f).sound(SoundType.WOOD).noOcclusion());
+			BlockBehaviour.Properties.of().strength(2.5f).sound(SoundType.WOOD).noOcclusion(),
+			CameraWorkbenchBlock::new);
 
 	/** Survival camera stand. Mount a camera body on it (right-click) to shoot from a
 	 *  dead-steady, movement-locked position; left-click a mounted stand to take it apart. */
 	public static final Block TRIPOD = registerBlock("tripod",
 			BlockBehaviour.Properties.of().strength(1.0f).sound(SoundType.METAL)
-					.noOcclusion().noCollision(),
+					.noOcclusion().noCollission(),
 			TripodBlock::new);
 
 	public static final BlockEntityType<TripodBlockEntity> TRIPOD_BE = Registry.register(
 			BuiltInRegistries.BLOCK_ENTITY_TYPE, id("tripod"),
-			new BlockEntityType<>(TripodBlockEntity::new, java.util.Set.of(TRIPOD)));
+			FabricBlockEntityTypeBuilder.create(TripodBlockEntity::new, TRIPOD).build());
 
 	public static final RecipeType<WorkbenchRecipe> WORKBENCH_RECIPE_TYPE = Registry.register(
 			BuiltInRegistries.RECIPE_TYPE, id("camera_workbench"),
@@ -118,13 +120,16 @@ public class PhotoMode implements ModInitializer {
 			BuiltInRegistries.RECIPE_SERIALIZER, id("camera_workbench"), WorkbenchRecipe.SERIALIZER);
 
 	// --- menus ---
-	public static final MenuType<CameraBodyMenu> CAMERA_BODY_MENU = Registry.register(
-			BuiltInRegistries.MENU, id("camera_body"),
-			new MenuType<>(CameraBodyMenu::new, FeatureFlags.VANILLA_SET));
+	// 1.20.4's MenuType has a private constructor; ScreenHandlerRegistry.registerSimple is
+	// Fabric's supported way to both register it and give the client its 2-arg (id, inv)
+	// reconstruction factory. Extra per-open data (which tripod, which held stack) never
+	// needs to travel here — the server-side SimpleMenuProvider builds the real menu with
+	// full context, and slot contents sync automatically once it's open.
+	public static final MenuType<CameraBodyMenu> CAMERA_BODY_MENU =
+			ScreenHandlerRegistry.registerSimple(id("camera_body"), CameraBodyMenu::new);
 
-	public static final MenuType<WorkbenchMenu> WORKBENCH_MENU = Registry.register(
-			BuiltInRegistries.MENU, id("camera_workbench"),
-			new MenuType<>(WorkbenchMenu::new, FeatureFlags.VANILLA_SET));
+	public static final MenuType<WorkbenchMenu> WORKBENCH_MENU =
+			ScreenHandlerRegistry.registerSimple(id("camera_workbench"), WorkbenchMenu::new);
 
 	// --- classification ---
 
@@ -167,10 +172,14 @@ public class PhotoMode implements ModInitializer {
 		return FILTER_SPECS.getOrDefault(item, FilterSpec.NONE);
 	}
 
-	/** Contents of a camera body's loadout as a fixed 2-slot list: [0] lens, [1] filter. */
+	/** Contents of a camera body's loadout as a fixed 2-slot list: [0] lens, [1] filter.
+	 *  1.20.4 predates data components, so this is stored as NBT (a nested "Items" list
+	 *  under the {@value #LOADOUT_KEY} tag) rather than a {@code DataComponentType}. */
 	public static NonNullList<ItemStack> loadoutContents(ItemStack cameraBody) {
 		NonNullList<ItemStack> gear = NonNullList.withSize(2, ItemStack.EMPTY);
-		cameraBody.getOrDefault(LOADOUT, ItemContainerContents.EMPTY).copyInto(gear);
+		if (cameraBody.hasTag() && cameraBody.getTag().contains(LOADOUT_KEY)) {
+			ContainerHelper.loadAllItems(cameraBody.getTag().getCompound(LOADOUT_KEY), gear);
+		}
 		return gear;
 	}
 
@@ -182,64 +191,70 @@ public class PhotoMode implements ModInitializer {
 		return loadoutContents(cameraBody).get(1);
 	}
 
+	public static void setLoadoutContents(ItemStack cameraBody, ItemStack lens, ItemStack filter) {
+		NonNullList<ItemStack> gear = NonNullList.withSize(2, ItemStack.EMPTY);
+		gear.set(0, lens);
+		gear.set(1, filter);
+		CompoundTag loadout = new CompoundTag();
+		ContainerHelper.saveAllItems(loadout, gear);
+		cameraBody.getOrCreateTag().put(LOADOUT_KEY, loadout);
+	}
+
 	@Override
 	public void onInitialize() {
-		// The Camera Workbench recipe type is custom, so its serializer must be opted in
-		// or the server never syncs those recipes to clients (JEI / recipe book see none).
-		net.fabricmc.fabric.api.recipe.v1.sync.RecipeSynchronization
-				.synchronizeRecipeSerializer(WORKBENCH_SERIALIZER);
+		// Note: no equivalent of 26.2's RecipeSynchronization.synchronizeRecipeSerializer
+		// call exists (or is needed) on 1.20.4's Fabric API — custom recipe serializers of
+		// this shape (codec + fromNetwork/toNetwork) sync to clients automatically.
 
-		CreativeModeTabEvents.modifyOutputEvent(CreativeModeTabs.TOOLS_AND_UTILITIES)
-				.register(output -> {
-					output.accept(CREATIVE_CAMERA);
-					output.accept(CAMERA_BODY);
-					output.accept(DRONE);
-					output.accept(CAMERA_WORKBENCH.asItem());
-					output.accept(TRIPOD.asItem());
+		ItemGroupEvents.modifyEntriesEvent(CreativeModeTabs.TOOLS_AND_UTILITIES)
+				.register(entries -> {
+					entries.accept(CREATIVE_CAMERA);
+					entries.accept(CAMERA_BODY);
+					entries.accept(DRONE);
+					entries.accept(CAMERA_WORKBENCH.asItem());
+					entries.accept(TRIPOD.asItem());
 					for (Item lens : LENS_SPECS.keySet()) {
-						output.accept(lens);
+						entries.accept(lens);
 					}
 					for (Item flt : FILTER_SPECS.keySet()) {
-						output.accept(flt);
+						entries.accept(flt);
 					}
 				});
 
 		// Server side: Shift+right-click a camera body opens its loadout menu.
 		UseItemCallback.EVENT.register((player, level, hand) -> {
-			if (level.isClientSide()) {
-				return InteractionResult.PASS;
-			}
 			ItemStack held = player.getItemInHand(hand);
-			if (isCameraBody(held) && player.isShiftKeyDown()) {
+			if (!level.isClientSide() && isCameraBody(held) && player.isShiftKeyDown()) {
 				openLoadout(player);
-				return InteractionResult.SUCCESS;
+				return InteractionResultHolder.success(held);
 			}
-			return InteractionResult.PASS;
+			return InteractionResultHolder.pass(held);
 		});
 
 		// ...and the client asks for it from the "ATTACH A LENS" prompt / the E key.
-		PayloadTypeRegistry.serverboundPlay().register(OpenLoadoutPayload.TYPE, OpenLoadoutPayload.CODEC);
-		ServerPlayNetworking.registerGlobalReceiver(OpenLoadoutPayload.TYPE, (payload, context) -> {
-			net.minecraft.server.level.ServerPlayer p = context.player();
-			if (payload.tripod().isPresent()) {
-				net.minecraft.core.BlockPos pos = payload.tripod().get();
-				net.minecraft.world.level.block.state.BlockState st = p.level().getBlockState(pos);
-				if (st.is(TRIPOD) && st.getValue(TripodBlock.MOUNTED)
-						&& p.distanceToSqr(net.minecraft.world.phys.Vec3.atCenterOf(pos)) < 96.0) {
-					p.openMenu(new SimpleMenuProvider(
-							(id, inv, pl) -> new CameraBodyMenu(id, inv, pos),
-							Component.translatable("container.realcamera.camera_body")));
+		ServerPlayNetworking.registerGlobalReceiver(OpenLoadoutPayload.CHANNEL, (server, player, handler, buf, sender) -> {
+			var tripod = OpenLoadoutPayload.read(buf);
+			server.execute(() -> {
+				if (tripod.isPresent()) {
+					BlockPos pos = tripod.get();
+					BlockState st = player.level().getBlockState(pos);
+					if (st.is(TRIPOD) && st.getValue(TripodBlock.MOUNTED)
+							&& player.distanceToSqr(Vec3.atCenterOf(pos)) < 96.0) {
+						player.openMenu(new SimpleMenuProvider(
+								(id, inv, pl) -> new CameraBodyMenu(id, inv, pos),
+								Component.translatable("container.realcamera.camera_body")));
+					}
+				} else if (isCameraBody(player.getMainHandItem())) {
+					openLoadout(player);
 				}
-			} else if (isCameraBody(p.getMainHandItem())) {
-				openLoadout(p);
-			}
+			});
 		});
 
 		LOGGER.info("[Photo Mode] registered {} lenses, {} filters, cameras + drone",
 				LENS_SPECS.size(), FILTER_SPECS.size());
 	}
 
-	private static void openLoadout(net.minecraft.world.entity.player.Player player) {
+	private static void openLoadout(Player player) {
 		player.openMenu(new SimpleMenuProvider(
 				(id, inv, p) -> new CameraBodyMenu(id, inv, p.getMainHandItem()),
 				Component.translatable("container.realcamera.camera_body")));
@@ -248,13 +263,13 @@ public class PhotoMode implements ModInitializer {
 	/** Point a camera body's item model at the installed lens (or clear it). Shared by
 	 *  the loadout menu and the tripod's hold-a-lens-and-right-click path. */
 	public static void setLensModel(ItemStack cameraBody, ItemStack lens) {
-		if (lens.isEmpty()) {
-			cameraBody.remove(net.minecraft.core.component.DataComponents.CUSTOM_MODEL_DATA);
+		Integer index = lens.isEmpty() ? null : LENS_MODEL_INDEX.get(lens.getItem());
+		if (index == null) {
+			if (cameraBody.hasTag()) {
+				cameraBody.getTag().remove(CUSTOM_MODEL_DATA_KEY);
+			}
 		} else {
-			String lensId = BuiltInRegistries.ITEM.getKey(lens.getItem()).getPath();
-			cameraBody.set(net.minecraft.core.component.DataComponents.CUSTOM_MODEL_DATA,
-					new net.minecraft.world.item.component.CustomModelData(
-							java.util.List.of(), java.util.List.of(), java.util.List.of(lensId), java.util.List.of()));
+			cameraBody.getOrCreateTag().putInt(CUSTOM_MODEL_DATA_KEY, index);
 		}
 	}
 
@@ -263,6 +278,7 @@ public class PhotoMode implements ModInitializer {
 	private static Item lens(String path, int min, int max, String aperture) {
 		Item item = register(path, new Item.Properties().stacksTo(1));
 		LENS_SPECS.put(item, new LensSpec(min, max, aperture));
+		LENS_MODEL_INDEX.put(item, LENS_MODEL_INDEX.size() + 1);
 		return item;
 	}
 
@@ -273,25 +289,17 @@ public class PhotoMode implements ModInitializer {
 	}
 
 	private static Item register(String path, Item.Properties properties) {
-		ResourceKey<Item> key = ResourceKey.create(Registries.ITEM, id(path));
-		return Registry.register(BuiltInRegistries.ITEM, key, new Item(properties.setId(key)));
-	}
-
-	private static Block registerBlock(String path, BlockBehaviour.Properties props) {
-		return registerBlock(path, props, CameraWorkbenchBlock::new);
+		return Registry.register(BuiltInRegistries.ITEM, id(path), new Item(properties));
 	}
 
 	private static Block registerBlock(String path, BlockBehaviour.Properties props,
-			java.util.function.Function<BlockBehaviour.Properties, Block> factory) {
-		ResourceKey<Block> bkey = ResourceKey.create(Registries.BLOCK, id(path));
-		Block block = Registry.register(BuiltInRegistries.BLOCK, bkey, factory.apply(props.setId(bkey)));
-		ResourceKey<Item> ikey = ResourceKey.create(Registries.ITEM, id(path));
-		Registry.register(BuiltInRegistries.ITEM, ikey,
-				new BlockItem(block, new Item.Properties().setId(ikey)));
+			Function<BlockBehaviour.Properties, Block> factory) {
+		Block block = Registry.register(BuiltInRegistries.BLOCK, id(path), factory.apply(props));
+		Registry.register(BuiltInRegistries.ITEM, id(path), new BlockItem(block, new Item.Properties()));
 		return block;
 	}
 
-	public static Identifier id(String path) {
-		return Identifier.fromNamespaceAndPath(MOD_ID, path);
+	public static ResourceLocation id(String path) {
+		return new ResourceLocation(MOD_ID, path);
 	}
 }

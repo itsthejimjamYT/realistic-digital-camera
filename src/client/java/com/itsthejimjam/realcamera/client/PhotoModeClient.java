@@ -9,14 +9,17 @@ import com.itsthejimjam.realcamera.client.menu.CameraWorkbenchScreen;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
-import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
+import net.fabricmc.fabric.api.client.rendering.v1.BlockEntityRendererRegistry;
+import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.fabricmc.fabric.api.event.player.UseItemCallback;
 
 import net.minecraft.client.gui.screens.MenuScreens;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.InteractionResultHolder;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
@@ -32,45 +35,44 @@ public class PhotoModeClient implements ClientModInitializer {
 		MenuScreens.register(PhotoMode.CAMERA_BODY_MENU, CameraBodyScreen::new);
 		MenuScreens.register(PhotoMode.WORKBENCH_MENU, CameraWorkbenchScreen::new);
 
-		net.minecraft.client.renderer.blockentity.BlockEntityRenderers.register(
-				PhotoMode.TRIPOD_BE, TripodBlockEntityRenderer::new);
+		BlockEntityRendererRegistry.register(PhotoMode.TRIPOD_BE, TripodBlockEntityRenderer::new);
 
 		// Right-clicking a camera enters photo mode. Client-only; the server never sees
 		// it. Shift+right-click on the camera body opens its loadout menu instead — that
 		// is handled server-side in PhotoMode.onInitialize (this side just returns
 		// SUCCESS so the vanilla use is consumed without entering photo mode).
 		UseItemCallback.EVENT.register((player, level, hand) -> {
+			ItemStack held = player.getItemInHand(hand);
 			if (!level.isClientSide()) {
-				return InteractionResult.PASS;
+				return InteractionResultHolder.pass(held);
 			}
 			if (PhotoModeSession.isActive()) {
-				return InteractionResult.SUCCESS; // exit is edge-detected in onEndClientTick
+				return InteractionResultHolder.success(held); // exit is edge-detected in onEndClientTick
 			}
-			ItemStack held = player.getItemInHand(hand);
 
 			if (PhotoMode.isDrone(held)) {
 				PhotoModeSession.toggle(PhotoModeSession.Mode.DRONE, held.getItem(), null, null, false);
-				return InteractionResult.SUCCESS;
+				return InteractionResultHolder.success(held);
 			}
 			if (PhotoMode.isCameraBody(held)) {
 				if (player.isShiftKeyDown()) {
-					return InteractionResult.SUCCESS; // server opens the loadout menu
+					return InteractionResultHolder.success(held); // server opens the loadout menu
 				}
 				enterWithBody(held); // handheld; a mounted tripod is a placed block
-				return InteractionResult.SUCCESS;
+				return InteractionResultHolder.success(held);
 			}
 			if (PhotoMode.isCreativeCamera(held)) {
 				PhotoModeSession.toggle(PhotoModeSession.Mode.CAMERA, held.getItem(), null, null, false);
-				return InteractionResult.SUCCESS;
+				return InteractionResultHolder.success(held);
 			}
-			return InteractionResult.PASS;
+			return InteractionResultHolder.pass(held);
 		});
 
 		// A placed tripod. Right-clicking a MOUNTED stand (empty hand or the camera) takes
 		// you into photo mode from the stand's position, movement locked. Mounting a
-		// camera body onto a bare stand is left to the server (TripodBlock.useItemOn).
+		// camera body onto a bare stand is left to the server (TripodBlock.use).
 		UseBlockCallback.EVENT.register((player, level, hand, hitResult) -> {
-			if (!level.isClientSide() || PhotoModeSession.isActive() || hand != net.minecraft.world.InteractionHand.MAIN_HAND) {
+			if (!level.isClientSide() || PhotoModeSession.isActive() || hand != InteractionHand.MAIN_HAND) {
 				return InteractionResult.PASS;
 			}
 			BlockState clicked = level.getBlockState(hitResult.getBlockPos());
@@ -114,7 +116,7 @@ public class PhotoModeClient implements ClientModInitializer {
 			PhotoKeys.tick();
 		});
 
-		HudElementRegistry.addLast(PhotoOverlay.ID, new PhotoOverlay());
+		HudRenderCallback.EVENT.register(new PhotoOverlay());
 
 		ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
 			if (PhotoModeSession.isActive()) {
@@ -122,7 +124,7 @@ public class PhotoModeClient implements ClientModInitializer {
 			}
 		});
 
-		// Capture the server-synced recipe set so JEI can list our custom bench recipes.
+		// Capture the client's recipe manager so JEI can list our custom bench recipes.
 		SyncedRecipes.init();
 
 		PhotoMode.LOGGER.info("[Photo Mode] client ready");

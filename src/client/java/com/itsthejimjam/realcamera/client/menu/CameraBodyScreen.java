@@ -3,7 +3,7 @@ package com.itsthejimjam.realcamera.client.menu;
 import com.itsthejimjam.realcamera.client.PhotoModeSession;
 import com.itsthejimjam.realcamera.menu.CameraBodyMenu;
 
-import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.player.Inventory;
@@ -21,7 +21,9 @@ public class CameraBodyScreen extends AbstractContainerScreen<CameraBodyMenu> {
 	private static final int LABEL = 0xFF9A9A9A;
 
 	public CameraBodyScreen(CameraBodyMenu menu, Inventory inv, Component title) {
-		super(menu, inv, title, 176, 166);
+		super(menu, inv, title);
+		this.imageWidth = 176;
+		this.imageHeight = 166;
 		this.inventoryLabelY = this.imageHeight - 94;
 	}
 
@@ -34,8 +36,7 @@ public class CameraBodyScreen extends AbstractContainerScreen<CameraBodyMenu> {
 	}
 
 	@Override
-	public void extractBackground(GuiGraphicsExtractor g, int mouseX, int mouseY, float partialTick) {
-		super.extractBackground(g, mouseX, mouseY, partialTick);
+	protected void renderBg(GuiGraphics g, float partialTick, int mouseX, int mouseY) {
 		int x = this.leftPos;
 		int y = this.topPos;
 		g.fill(x - 1, y - 1, x + this.imageWidth + 1, y + this.imageHeight + 1, BORDER);
@@ -47,8 +48,7 @@ public class CameraBodyScreen extends AbstractContainerScreen<CameraBodyMenu> {
 		for (int i = 0; i < labels.length; i++) {
 			slotBox(g, x + sx[i], y + sy);
 			String l = labels[i];
-			g.text(this.font, Component.literal(l),
-					x + sx[i] + 8 - this.font.width(l) / 2, y + sy - 11, LABEL, false);
+			g.drawString(this.font, l, x + sx[i] + 8 - this.font.width(l) / 2, y + sy - 11, LABEL, false);
 		}
 
 		for (int r = 0; r < 3; r++) {
@@ -61,7 +61,7 @@ public class CameraBodyScreen extends AbstractContainerScreen<CameraBodyMenu> {
 		}
 	}
 
-	private static void slotBox(GuiGraphicsExtractor g, int sx, int sy) {
+	private static void slotBox(GuiGraphics g, int sx, int sy) {
 		g.fill(sx - 1, sy - 1, sx + 17, sy + 17, SLOT_EDGE);
 		g.fill(sx, sy, sx + 16, sy + 16, SLOT_BG);
 	}

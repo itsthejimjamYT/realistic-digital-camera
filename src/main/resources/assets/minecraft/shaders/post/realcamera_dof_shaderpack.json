@@ -1,0 +1,28 @@
+{
+    "targets": [ "preh", "pre", "swap" ],
+    "passes": [
+        {
+            "name": "realcamera_prefilterh",
+            "intarget": "minecraft:main",
+            "outtarget": "preh"
+        },
+        {
+            "name": "realcamera_prefilterv",
+            "intarget": "preh",
+            "outtarget": "pre"
+        },
+        {
+            "name": "realcamera_dof_shaderpack",
+            "intarget": "minecraft:main",
+            "outtarget": "swap",
+            "auxtargets": [
+                { "name": "PreSampler", "id": "pre" }
+            ]
+        },
+        {
+            "name": "realcamera_blit",
+            "intarget": "swap",
+            "outtarget": "minecraft:main"
+        }
+    ]
+}

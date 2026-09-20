@@ -2,13 +2,18 @@ package com.itsthejimjam.realcamera.client;
 
 import com.itsthejimjam.realcamera.FilterSpec;
 import com.itsthejimjam.realcamera.LensSpec;
+import com.itsthejimjam.realcamera.OpenLoadoutPayload;
 import com.itsthejimjam.realcamera.PhotoMode;
-import com.mojang.blaze3d.textures.GpuTextureView;
+import com.mojang.blaze3d.pipeline.RenderTarget;
+
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
 
 import net.minecraft.client.CameraType;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.player.ClientInput;
+import net.minecraft.client.player.Input;
 import net.minecraft.client.player.KeyboardInput;
+import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
@@ -773,31 +778,33 @@ public final class PhotoModeSession {
 		cursorV = Mth.clamp(cursorV - (float) dy * CURSOR_SENS, 0.0f, 1.0f);
 	}
 
-	/** Set briefly by the shader-pack path so the depth-swap mixin can substitute the scene depth. */
-	private static volatile GpuTextureView depthViewOverride = null;
+	/** Set briefly by the shader-pack path so the depth-swap mixin can substitute the
+	 *  scene depth. 1.20.4 predates Blaze3D's GpuTextureView — a RenderTarget is the
+	 *  equivalent "thing you substitute a pass's input with" here. */
+	private static volatile RenderTarget depthViewOverride = null;
 
 	/** Diagnostics: log the shader-pack path state and the depth-view swap once per session. */
 	public static boolean shaderPathLogged = false;
 	public static boolean depthSwapLogged = false;
 	public static boolean afterLevelLogged = false;
 
-	public static GpuTextureView depthViewOverride() {
+	public static RenderTarget depthViewOverride() {
 		return depthViewOverride;
 	}
 
-	public static void setDepthViewOverride(GpuTextureView view) {
+	public static void setDepthViewOverride(RenderTarget view) {
 		depthViewOverride = view;
 	}
 
 	/** Set by {@link PhotoCapture} during a long exposure: the post chain's colour input
 	 *  ({@code minecraft:main}) is replaced with the stacked image so DoF/grade still apply. */
-	private static volatile GpuTextureView colorViewOverride = null;
+	private static volatile RenderTarget colorViewOverride = null;
 
-	public static GpuTextureView colorViewOverride() {
+	public static RenderTarget colorViewOverride() {
 		return colorViewOverride;
 	}
 
-	public static void setColorViewOverride(GpuTextureView view) {
+	public static void setColorViewOverride(RenderTarget view) {
 		colorViewOverride = view;
 	}
 
@@ -817,27 +824,6 @@ public final class PhotoModeSession {
 			mc.getSingleplayerServer().execute(
 					() -> mc.getSingleplayerServer().tickRateManager().setTickRate(rate));
 		}
-	}
-
-	/** Advance the (already-frozen) world by exactly this many ticks, then stop — the
-	 *  same deterministic mechanism behind vanilla's {@code /tick step}. Long exposure
-	 *  uses this per sub-frame instead of a continuous boosted tick rate so the amount
-	 *  of game-time (and therefore sky/star rotation) covered by the shot depends only
-	 *  on shutter speed, never on how long a sub-frame's render/readback happens to take
-	 *  in real time. */
-	public static void stepWorldTicks(int ticks) {
-		Minecraft mc = Minecraft.getInstance();
-		if (mc.getSingleplayerServer() != null) {
-			mc.getSingleplayerServer().execute(
-					() -> mc.getSingleplayerServer().tickRateManager().setFrozenTicksToRun(ticks));
-		}
-	}
-
-	/** True while the server is still working through a {@link #stepWorldTicks} request. */
-	public static boolean isWorldStepping() {
-		Minecraft mc = Minecraft.getInstance();
-		return mc.getSingleplayerServer() != null
-				&& mc.getSingleplayerServer().tickRateManager().frozenTicksToRun() > 0;
 	}
 
 	private PhotoModeSession() {
@@ -1083,7 +1069,7 @@ public final class PhotoModeSession {
 			return;
 		}
 		if (!mc.hasSingleplayerServer()) {
-			mc.player.sendOverlayMessage(Component.literal("Photo mode is singleplayer-only for now"));
+			mc.player.displayClientMessage(Component.literal("Photo mode is singleplayer-only for now"), true);
 			return;
 		}
 
@@ -1118,9 +1104,12 @@ public final class PhotoModeSession {
 		// (Long exposure still briefly boosts the tick rate to fast-forward the shutter.)
 		active = true;
 		wasUseKeyDown = mc.options.keyUse.isDown();
-		mc.player.sendOverlayMessage(Component.literal(mode == Mode.DRONE
+		// true = action-bar style (transient, bottom-center) — 1.20.4 has no
+		// sendOverlayMessage() like 26.2; displayClientMessage's 2nd param picks the same
+		// behavior. false would post it as a permanent line in the chat log instead.
+		mc.player.displayClientMessage(Component.literal(mode == Mode.DRONE
 				? "Drone  ·  fly to compose  ·  scroll zoom  ·  right-click to exit"
-				: "Camera  ·  walk to compose  ·  scroll zoom  ·  right-click to exit"));
+				: "Camera  ·  walk to compose  ·  scroll zoom  ·  right-click to exit"), true);
 		PhotoMode.LOGGER.info("[Photo Mode] entered ({})", mode);
 	}
 
@@ -1166,7 +1155,7 @@ public final class PhotoModeSession {
 		setDroneActive(toFly);
 		Minecraft mc = Minecraft.getInstance();
 		if (mc.player != null) {
-			mc.player.sendOverlayMessage(Component.literal(toFly ? "Fly" : "Walk"));
+			mc.player.displayClientMessage(Component.literal(toFly ? "Fly" : "Walk"), true);
 		}
 	}
 
@@ -1328,9 +1317,9 @@ public final class PhotoModeSession {
 	}
 
 	/** Called at the start of every client tick. Controls whether the character reads
-	 *  the keyboard. In DRONE mode the character is always frozen (a plain ClientInput
-	 *  reads nothing). In CAMERA mode the character walks — except while a photo is
-	 *  being taken, or the settings panel / focus reticle is up, when it must hold still. */
+	 *  the keyboard. In DRONE mode the character is always frozen (a plain Input reads
+	 *  nothing). In CAMERA mode the character walks — except while a photo is being
+	 *  taken, or the settings panel / focus reticle is up, when it must hold still. */
 	private static boolean wasUseKeyDown = false;
 
 	public static void onStartClientTick(Minecraft mc) {
@@ -1354,10 +1343,11 @@ public final class PhotoModeSession {
 			while (mc.options.keyInventory.consumeClick()) {
 				open = true;
 			}
-			if (open && mc.gui.screen() == null) {
-				net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.send(
-						new com.itsthejimjam.realcamera.OpenLoadoutPayload(
-								tripodPos == null ? java.util.Optional.empty() : java.util.Optional.of(tripodPos)));
+			if (open && mc.screen == null) {
+				FriendlyByteBuf buf = PacketByteBufs.create();
+				OpenLoadoutPayload.write(buf,
+						tripodPos == null ? java.util.Optional.empty() : java.util.Optional.of(tripodPos));
+				ClientPlayNetworking.send(OpenLoadoutPayload.CHANNEL, buf);
 			}
 		} else {
 			// Other devices: don't let the inventory key do anything odd mid-session.
@@ -1373,11 +1363,11 @@ public final class PhotoModeSession {
 		}
 		boolean holdStill = mode == Mode.DRONE
 				|| focusPicking
-				|| mc.gui.screen() != null
+				|| mc.screen != null
 				|| PhotoCapture.wantsBigFrame()
 				|| (tripodMounted && mode == Mode.CAMERA);
 		if (holdStill) {
-			mc.player.input = new ClientInput();
+			mc.player.input = new Input();
 		} else if (!(mc.player.input instanceof KeyboardInput)) {
 			mc.player.input = new KeyboardInput(mc.options);
 		}
@@ -1397,7 +1387,7 @@ public final class PhotoModeSession {
 		// Right-click leaves photo mode. Poll the key STATE (not the consumed click
 		// queue, which is timing- and hand-dependent) and fire once on the press edge.
 		boolean useDown = mc.options.keyUse.isDown();
-		if (useDown && !wasUseKeyDown && mc.gui.screen() == null) {
+		if (useDown && !wasUseKeyDown && mc.screen == null) {
 			wasUseKeyDown = true;
 			exit();
 			return;

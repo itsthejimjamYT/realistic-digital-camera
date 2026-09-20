@@ -11,29 +11,23 @@ import com.mojang.serialization.Codec;
 import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 
+import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.core.registries.Registries;
-import net.minecraft.network.RegistryFriendlyByteBuf;
-import net.minecraft.network.codec.ByteBufCodecs;
-import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.world.inventory.CraftingContainer;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.crafting.CraftingInput;
 import net.minecraft.world.item.crafting.Ingredient;
-import net.minecraft.world.item.crafting.PlacementInfo;
 import net.minecraft.world.item.crafting.Recipe;
-import net.minecraft.world.item.crafting.RecipeBookCategories;
-import net.minecraft.world.item.crafting.RecipeBookCategory;
 import net.minecraft.world.item.crafting.RecipeSerializer;
 import net.minecraft.world.item.crafting.RecipeType;
 import net.minecraft.world.level.Level;
 
 /**
  * A shaped recipe for the Camera Workbench — a grid up to {@value #MAX} wide / tall (vanilla
- * {@link net.minecraft.world.item.crafting.ShapedRecipePattern} is still 3×3-capped, so
- * this parses and matches its own pattern).
+ * {@code ShapedRecipe} is still 3×3-capped, so this parses and matches its own pattern).
  */
-public class WorkbenchRecipe implements Recipe<CraftingInput> {
+public class WorkbenchRecipe implements Recipe<CraftingContainer> {
 
 	public static final int MAX = 7;
 
@@ -46,7 +40,6 @@ public class WorkbenchRecipe implements Recipe<CraftingInput> {
 	private final int height;
 	/** width*height, row-major. Absent = must be empty. */
 	private final List<Optional<Ingredient>> cells;
-	private final PlacementInfo placementInfo;
 
 	public WorkbenchRecipe(List<String> patternRows, Map<String, Ingredient> key, Item resultItem, int resultCount) {
 		List<String> shrunk = shrink(patternRows);
@@ -67,15 +60,13 @@ public class WorkbenchRecipe implements Recipe<CraftingInput> {
 				}
 			}
 		}
-		this.placementInfo = PlacementInfo.createFromOptionals(this.cells);
 	}
 
 	/**
 	 * Drop fully-blank border rows and columns so the pattern's own width/height match
-	 * the trimmed {@link CraftingInput} the menu passes in. Vanilla
-	 * {@link net.minecraft.world.item.crafting.ShapedRecipePattern} does the same — without
-	 * it a padded pattern like {@code "   B   "} counts as 7 wide and never matches the
-	 * 5-wide cropped grid the player actually filled.
+	 * the trimmed crafting grid the menu passes in. Vanilla's shaped-recipe pattern does
+	 * the same — without it a padded pattern like {@code "   B   "} counts as 7 wide and
+	 * never matches the 5-wide cropped grid the player actually filled.
 	 */
 	private static List<String> shrink(List<String> rows) {
 		int left = Integer.MAX_VALUE;
@@ -137,9 +128,9 @@ public class WorkbenchRecipe implements Recipe<CraftingInput> {
 	}
 
 	@Override
-	public boolean matches(CraftingInput input, Level level) {
-		int iw = input.width();
-		int ih = input.height();
+	public boolean matches(CraftingContainer input, Level level) {
+		int iw = input.getWidth();
+		int ih = input.getHeight();
 		if (width > iw || height > ih) {
 			return false;
 		}
@@ -153,9 +144,9 @@ public class WorkbenchRecipe implements Recipe<CraftingInput> {
 		return false;
 	}
 
-	private boolean matchesAt(CraftingInput input, int ox, int oy, boolean mirror) {
-		for (int y = 0; y < input.height(); y++) {
-			for (int x = 0; x < input.width(); x++) {
+	private boolean matchesAt(CraftingContainer input, int ox, int oy, boolean mirror) {
+		for (int y = 0; y < input.getHeight(); y++) {
+			for (int x = 0; x < input.getWidth(); x++) {
 				int px = x - ox;
 				int py = y - oy;
 				Optional<Ingredient> want = Optional.empty();
@@ -163,7 +154,7 @@ public class WorkbenchRecipe implements Recipe<CraftingInput> {
 					int cx = mirror ? width - 1 - px : px;
 					want = cells.get(py * width + cx);
 				}
-				ItemStack got = input.getItem(x + y * input.width());
+				ItemStack got = input.getItem(x + y * input.getWidth());
 				if (want.isEmpty()) {
 					if (!got.isEmpty()) {
 						return false;
@@ -177,8 +168,18 @@ public class WorkbenchRecipe implements Recipe<CraftingInput> {
 	}
 
 	@Override
-	public ItemStack assemble(CraftingInput input) {
+	public ItemStack assemble(CraftingContainer input, RegistryAccess registries) {
 		return new ItemStack(resultItem, resultCount);
+	}
+
+	@Override
+	public boolean canCraftInDimensions(int width, int height) {
+		return width >= this.width && height >= this.height;
+	}
+
+	@Override
+	public ItemStack getResultItem(RegistryAccess registries) {
+		return resultStack();
 	}
 
 	@Override
@@ -187,28 +188,18 @@ public class WorkbenchRecipe implements Recipe<CraftingInput> {
 	}
 
 	@Override
-	public String group() {
+	public String getGroup() {
 		return "";
 	}
 
 	@Override
-	public RecipeSerializer<? extends Recipe<CraftingInput>> getSerializer() {
+	public RecipeSerializer<? extends Recipe<CraftingContainer>> getSerializer() {
 		return SERIALIZER;
 	}
 
 	@Override
-	public RecipeType<? extends Recipe<CraftingInput>> getType() {
+	public RecipeType<? extends Recipe<CraftingContainer>> getType() {
 		return PhotoMode.WORKBENCH_RECIPE_TYPE;
-	}
-
-	@Override
-	public PlacementInfo placementInfo() {
-		return placementInfo;
-	}
-
-	@Override
-	public RecipeBookCategory recipeBookCategory() {
-		return RecipeBookCategories.CRAFTING_MISC;
 	}
 
 	public static final MapCodec<WorkbenchRecipe> CODEC = RecordCodecBuilder.mapCodec(i -> i.group(
@@ -218,13 +209,42 @@ public class WorkbenchRecipe implements Recipe<CraftingInput> {
 			Codec.INT.optionalFieldOf("count", 1).forGetter(r -> r.resultCount)
 	).apply(i, WorkbenchRecipe::new));
 
-	public static final StreamCodec<RegistryFriendlyByteBuf, WorkbenchRecipe> STREAM_CODEC = StreamCodec.composite(
-			ByteBufCodecs.STRING_UTF8.apply(ByteBufCodecs.list()), r -> r.patternRows,
-			ByteBufCodecs.map(HashMap::new, ByteBufCodecs.STRING_UTF8, Ingredient.CONTENTS_STREAM_CODEC), r -> r.key,
-			ByteBufCodecs.registry(Registries.ITEM), r -> r.resultItem,
-			ByteBufCodecs.VAR_INT, r -> r.resultCount,
-			WorkbenchRecipe::new);
+	public static final RecipeSerializer<WorkbenchRecipe> SERIALIZER = new RecipeSerializer<>() {
+		@Override
+		public Codec<WorkbenchRecipe> codec() {
+			return CODEC.codec();
+		}
 
-	public static final RecipeSerializer<WorkbenchRecipe> SERIALIZER =
-			new RecipeSerializer<>(CODEC, STREAM_CODEC);
+		@Override
+		public WorkbenchRecipe fromNetwork(FriendlyByteBuf buf) {
+			int rows = buf.readVarInt();
+			List<String> pattern = new ArrayList<>(rows);
+			for (int i = 0; i < rows; i++) {
+				pattern.add(buf.readUtf());
+			}
+			int keyCount = buf.readVarInt();
+			Map<String, Ingredient> key = new HashMap<>();
+			for (int i = 0; i < keyCount; i++) {
+				key.put(buf.readUtf(), Ingredient.fromNetwork(buf));
+			}
+			Item result = buf.readById(BuiltInRegistries.ITEM);
+			int count = buf.readVarInt();
+			return new WorkbenchRecipe(pattern, key, result, count);
+		}
+
+		@Override
+		public void toNetwork(FriendlyByteBuf buf, WorkbenchRecipe recipe) {
+			buf.writeVarInt(recipe.patternRows.size());
+			for (String row : recipe.patternRows) {
+				buf.writeUtf(row);
+			}
+			buf.writeVarInt(recipe.key.size());
+			for (Map.Entry<String, Ingredient> e : recipe.key.entrySet()) {
+				buf.writeUtf(e.getKey());
+				e.getValue().toNetwork(buf);
+			}
+			buf.writeId(BuiltInRegistries.ITEM, recipe.resultItem);
+			buf.writeVarInt(recipe.resultCount);
+		}
+	};
 }

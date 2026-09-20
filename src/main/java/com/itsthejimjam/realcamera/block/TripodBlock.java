@@ -5,10 +5,10 @@ import com.mojang.serialization.MapCodec;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.NonNullList;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
-import net.minecraft.util.RandomSource;
 import net.minecraft.util.StringRepresentable;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
@@ -18,8 +18,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.context.BlockPlaceContext;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.LevelReader;
-import net.minecraft.world.level.ScheduledTickAccess;
+import net.minecraft.world.level.LevelAccessor;
 import net.minecraft.world.level.block.BaseEntityBlock;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
@@ -103,12 +102,12 @@ public class TripodBlock extends BaseEntityBlock {
 	 *  (a block-entity renderer), never the chunk mesh — that's the only way to reliably
 	 *  keep it out of its own photo when Sodium is meshing terrain. */
 	@Override
-	protected RenderShape getRenderShape(BlockState state) {
+	public RenderShape getRenderShape(BlockState state) {
 		return RenderShape.INVISIBLE;
 	}
 
 	@Override
-	protected VoxelShape getShape(BlockState state, BlockGetter level, BlockPos pos, CollisionContext context) {
+	public VoxelShape getShape(BlockState state, BlockGetter level, BlockPos pos, CollisionContext context) {
 		return state.getValue(HALF) == DoubleBlockHalf.UPPER ? UPPER_SHAPE : LOWER_SHAPE;
 	}
 
@@ -136,7 +135,7 @@ public class TripodBlock extends BaseEntityBlock {
 	public BlockState getStateForPlacement(BlockPlaceContext ctx) {
 		BlockPos pos = ctx.getClickedPos();
 		Level level = ctx.getLevel();
-		if (pos.getY() < level.getMaxY() - 1 && level.getBlockState(pos.above()).canBeReplaced(ctx)) {
+		if (pos.getY() < level.getMaxBuildHeight() - 1 && level.getBlockState(pos.above()).canBeReplaced(ctx)) {
 			return defaultBlockState().setValue(HALF, DoubleBlockHalf.LOWER);
 		}
 		return null;
@@ -148,36 +147,42 @@ public class TripodBlock extends BaseEntityBlock {
 	}
 
 	@Override
-	protected BlockState updateShape(BlockState state, LevelReader level, ScheduledTickAccess ticks, BlockPos pos,
-			Direction dir, BlockPos neighborPos, BlockState neighborState, RandomSource random) {
+	public BlockState updateShape(BlockState state, Direction dir, BlockState neighborState,
+			LevelAccessor level, BlockPos pos, BlockPos neighborPos) {
 		DoubleBlockHalf half = state.getValue(HALF);
 		if (dir.getAxis() == Direction.Axis.Y && (half == DoubleBlockHalf.LOWER) == (dir == Direction.UP)) {
 			return neighborState.is(this) && neighborState.getValue(HALF) != half
 					? state
 					: Blocks.AIR.defaultBlockState();
 		}
-		return super.updateShape(state, level, ticks, pos, dir, neighborPos, neighborState, random);
+		return super.updateShape(state, dir, neighborState, level, pos, neighborPos);
 	}
 
 	// --- interactions: always act on the LOWER half --------------------------
 
 	@Override
-	protected InteractionResult useItemOn(ItemStack stack, BlockState state, Level level, BlockPos pos,
+	public InteractionResult use(BlockState state, Level level, BlockPos pos,
 			Player player, InteractionHand hand, BlockHitResult hit) {
+		ItemStack stack = player.getItemInHand(hand);
 		BlockPos bp = basePos(state, pos);
 		BlockState bs = level.getBlockState(bp);
+
+		if (stack.isEmpty()) {
+			// A mounted stand: consume the click so vanilla does nothing; the client-side
+			// use-block callback runs first and takes you into photo mode.
+			return bs.getValue(MOUNTED) ? InteractionResult.SUCCESS : InteractionResult.PASS;
+		}
 
 		// Mounted stand + a lens/filter in hand: slot it straight into the camera.
 		if (bs.getValue(MOUNTED) && (PhotoMode.isLens(stack) || PhotoMode.isFilter(stack))) {
 			if (!level.isClientSide() && level.getBlockEntity(bp) instanceof TripodBlockEntity be
 					&& PhotoMode.isCameraBody(be.getCamera())) {
 				ItemStack cam = be.getCamera().copy();
-				var gear = PhotoMode.loadoutContents(cam);          // [lens, filter]
+				NonNullList<ItemStack> gear = PhotoMode.loadoutContents(cam);   // [lens, filter]
 				int slot = PhotoMode.isLens(stack) ? 0 : 1;
 				ItemStack removed = gear.get(slot);
 				gear.set(slot, stack.copyWithCount(1));
-				cam.set(PhotoMode.LOADOUT, net.minecraft.world.item.component.ItemContainerContents
-						.fromItems(java.util.List.of(gear.get(0), gear.get(1))));
+				PhotoMode.setLoadoutContents(cam, gear.get(0), gear.get(1));
 				PhotoMode.setLensModel(cam, gear.get(0));
 				be.setCamera(cam);
 				level.setBlock(bp, bs.setValue(BARREL, barrelFor(cam)), 3);
@@ -207,16 +212,7 @@ public class TripodBlock extends BaseEntityBlock {
 	}
 
 	@Override
-	protected InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos,
-			Player player, BlockHitResult hit) {
-		// A mounted stand: consume the click so vanilla does nothing; the client-side
-		// use-block callback runs first and takes you into photo mode.
-		return level.getBlockState(basePos(state, pos)).getValue(MOUNTED)
-				? InteractionResult.SUCCESS : InteractionResult.PASS;
-	}
-
-	@Override
-	protected void attack(BlockState state, Level level, BlockPos pos, Player player) {
+	public void attack(BlockState state, Level level, BlockPos pos, Player player) {
 		if (level.isClientSide()) {
 			return;
 		}
