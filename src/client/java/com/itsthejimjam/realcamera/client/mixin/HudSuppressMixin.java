@@ -4,7 +4,6 @@ import com.itsthejimjam.realcamera.client.PhotoCapture;
 import com.itsthejimjam.realcamera.client.PhotoModeSession;
 
 import net.minecraft.client.gui.Gui;
-import net.minecraft.client.gui.GuiGraphics;
 
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -22,37 +21,24 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * {@link com.itsthejimjam.realcamera.client.PhotoOverlay} already self-suppresses while
  * {@code PhotoCapture.wantsBigFrame()}, so nothing of ours is lost.
  *
- * <p>1.20.4 predates the render-state-extraction HUD rewrite (no {@code Hud.extractXxx}
- * methods) — {@code renderCrosshair}/{@code renderHotbar}/{@code renderEffects} have
- * different signatures from each other here, so each gets its own injection instead of
- * one shared handler.
+ * <p>1.21.1's {@code Gui} still draws directly (no render-state extraction yet); the
+ * hotbar, hearts, food and XP bar all live under {@code renderHotbarAndDecorations}.
  */
 @Mixin(Gui.class)
 public class HudSuppressMixin {
 
-	@Inject(method = "renderCrosshair", at = @At("HEAD"), cancellable = true)
-	private void realcamera$suppressCrosshair(GuiGraphics graphics, CallbackInfo ci) {
-		if (PhotoModeSession.isActive()) {
-			ci.cancel();
-		}
-	}
-
-	@Inject(method = "renderHotbar", at = @At("HEAD"), cancellable = true)
-	private void realcamera$suppressHotbar(float partialTick, GuiGraphics graphics, CallbackInfo ci) {
-		if (PhotoModeSession.isActive()) {
-			ci.cancel();
-		}
-	}
-
-	@Inject(method = "renderEffects", at = @At("HEAD"), cancellable = true)
-	private void realcamera$suppressEffects(GuiGraphics graphics, CallbackInfo ci) {
+	@Inject(
+			method = {"renderCrosshair", "renderHotbarAndDecorations", "renderEffects"},
+			at = @At("HEAD"),
+			cancellable = true)
+	private void realcamera$suppressVanillaHud(CallbackInfo ci) {
 		if (PhotoModeSession.isActive()) {
 			ci.cancel();
 		}
 	}
 
 	@Inject(method = "render", at = @At("HEAD"), cancellable = true)
-	private void realcamera$suppressAllHudWhileCapturing(GuiGraphics graphics, float partialTick, CallbackInfo ci) {
+	private void realcamera$suppressAllHudWhileCapturing(CallbackInfo ci) {
 		if (PhotoModeSession.isActive() && PhotoCapture.wantsBigFrame()) {
 			ci.cancel();
 		}

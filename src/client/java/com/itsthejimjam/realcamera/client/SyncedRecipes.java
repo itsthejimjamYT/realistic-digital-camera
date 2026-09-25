@@ -12,7 +12,7 @@ import net.minecraft.world.item.crafting.RecipeHolder;
  * Source of {@code realcamera:camera_workbench} recipes for the JEI plugin.
  *
  * <p>26.2 tracks these via {@code fabric-recipe-api-v1}'s client recipe-sync event,
- * which doesn't exist on 1.20.4's Fabric API. Not needed here either: vanilla already
+ * which 1.21.1's Fabric API doesn't have. Not needed here either: 1.21.1 still
  * sends the full recipe set to every client on join (that's what powers the recipe
  * book), so the client's own {@code RecipeManager} is a perfectly reliable source —
  * just read it directly, no separate tracking class required.
@@ -23,7 +23,7 @@ public final class SyncedRecipes {
 	}
 
 	public static void init() {
-		// No-op on 1.20.4 — see the class doc. Kept as a call site so PhotoModeClient
+		// No-op on 1.21.1 — see the class doc. Kept as a call site so PhotoModeClient
 		// doesn't need a version-specific branch.
 	}
 

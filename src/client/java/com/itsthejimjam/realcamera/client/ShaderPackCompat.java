@@ -10,16 +10,15 @@ import com.itsthejimjam.realcamera.PhotoMode;
  * detection and scene-depth access both go through reflection against its public (and,
  * for depth, internal) API, so the mod runs fine with or without it installed.
  *
- * <p>1.20.4-era Iris has no {@code GpuTexture}/{@code GpuTextureView} abstraction (that's
+ * <p>1.21.1-era Iris has no {@code GpuTexture}/{@code GpuTextureView} abstraction (that's
  * 26.2's newer rendering API) — {@code RenderTargets.getDepthTexture()} and
  * {@code DepthTexture.getTextureId()} hand back a raw GL texture id directly, which is
  * exactly what {@link net.minecraft.client.renderer.EffectInstance#setSampler} wants.
  *
  * <p>Iris's own depth textures use STANDARD (non-reversed) depth — 0 at the camera, 1 at
- * the far plane / sky — the OptiFine-compatible convention shaderpacks are written
- * against, the opposite of vanilla 1.20.4's own reversed-Z main depth buffer. That's why
- * {@code realcamera_dof_shaderpack.fsh} inverts ({@code term = 1.0 - depth}) where
- * {@code realcamera_dof.fsh} doesn't.
+ * the far plane / sky — the same convention as vanilla 1.21.1's own main depth buffer, so
+ * {@code realcamera_dof.fsh} and {@code realcamera_dof_shaderpack.fsh} read depth identically
+ * and differ only in where the texture comes from.
  */
 public final class ShaderPackCompat {
 	private static Boolean present;

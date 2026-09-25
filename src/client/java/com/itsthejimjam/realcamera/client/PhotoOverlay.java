@@ -1,21 +1,22 @@
 package com.itsthejimjam.realcamera.client;
 
-import com.mojang.blaze3d.vertex.PoseStack;
 
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 
+import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 
 /**
  * The photo-mode on-screen overlay: aspect-ratio framing bars, a rule-of-thirds grid,
- * and a small settings readout. Registered on {@link HudRenderCallback} (1.20.4 predates
- * the newer ordered {@code HudElement}/{@code HudElementRegistry} system) so it draws on
- * top of the (suppressed) vanilla HUD while a session is active.
+ * and a small settings readout. Registered on {@link HudRenderCallback} (1.21.1 predates
+ * Fabric's ordered {@code HudElementRegistry}) so it draws on top of the (suppressed)
+ * vanilla HUD while a session is active.
  */
 public final class PhotoOverlay implements HudRenderCallback {
 
 	private static final int NOLENS_BG = 0xFFF3F3F3;
+	private static final int NOLENS_FG = 0xFF1A1A1A;
 	private static final int NOLENS_SUB = 0xFF808080;
 
 	private static final int BAR_COLOR = 0xFF000000;
@@ -26,7 +27,7 @@ public final class PhotoOverlay implements HudRenderCallback {
 	private static final int PICK_COLOR = 0xFFFFE24D;
 
 	@Override
-	public void onHudRender(GuiGraphics graphics, float tickDelta) {
+	public void onHudRender(GuiGraphics graphics, DeltaTracker deltaTracker) {
 		if (!PhotoModeSession.isActive() || PhotoCapture.wantsBigFrame()) {
 			return;
 		}
@@ -120,7 +121,7 @@ public final class PhotoOverlay implements HudRenderCallback {
 		int longest = Math.max(mc.font.width(readout), mc.font.width(hint));
 		int avail = w - 12;
 		float s = longest > avail ? (float) avail / longest : 1.0f;
-		PoseStack pose = graphics.pose();
+		var pose = graphics.pose();
 		pose.pushPose();
 		pose.translate(w / 2.0f, h - 4.0f, 0.0f);
 		pose.scale(s, s, 1.0f);
@@ -200,10 +201,11 @@ public final class PhotoOverlay implements HudRenderCallback {
 	private static final int METER_OK = 0xFF6BE06B;
 	private static final int METER_WARN = 0xFFF2C14E;
 	private static final int METER_CLIP = 0xFFF25C5C;
-	private static final int METER_BRACKET = 0xFFFFE24D;
 
 	/** A ±3-stop exposure scale centred on {@code cx}, baseline at {@code y}, with a
 	 *  pointer at {@code stops} above (+) / below (-) a neutral exposure. */
+	private static final int METER_BRACKET = 0xFFFFE24D;
+
 	private static void drawMeter(GuiGraphics g, int cx, int y, float stops) {
 		final int per = 34;                 // px per stop
 		final int half = per * 3;           // ±3 stops

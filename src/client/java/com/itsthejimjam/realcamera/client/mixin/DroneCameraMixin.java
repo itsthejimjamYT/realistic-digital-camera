@@ -22,7 +22,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * avoids the spectator-style "don't draw the entity you're attached to" skip that was
  * hiding the character.
  *
- * <p>1.20.4 does the position/rotation alignment directly inside {@code setup(...)} —
+ * <p>1.21.1 does the position/rotation alignment directly inside {@code setup(...)} —
  * the separate {@code alignWithEntity(float)} method is a later split.
  */
 @Mixin(Camera.class)

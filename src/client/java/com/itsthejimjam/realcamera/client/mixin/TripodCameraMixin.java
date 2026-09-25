@@ -18,7 +18,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * head. Rotation stays player-driven (turn in place to aim); movement is already locked
  * by {@code PhotoModeSession}.
  *
- * <p>See {@link DroneCameraMixin} for why 1.20.4 targets {@code setup(...)} rather than
+ * <p>See {@link DroneCameraMixin} for why 1.21.1 targets {@code setup(...)} rather than
  * {@code alignWithEntity(float)}.
  */
 @Mixin(Camera.class)

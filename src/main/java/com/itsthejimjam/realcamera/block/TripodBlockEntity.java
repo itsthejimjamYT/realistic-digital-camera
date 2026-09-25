@@ -3,6 +3,7 @@ package com.itsthejimjam.realcamera.block;
 import com.itsthejimjam.realcamera.PhotoMode;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientGamePacketListener;
@@ -34,16 +35,18 @@ public class TripodBlockEntity extends BlockEntity {
 	}
 
 	@Override
-	public void load(CompoundTag tag) {
-		super.load(tag);
-		this.camera = tag.contains("Camera") ? ItemStack.of(tag.getCompound("Camera")) : ItemStack.EMPTY;
+	protected void loadAdditional(CompoundTag tag, HolderLookup.Provider registries) {
+		super.loadAdditional(tag, registries);
+		this.camera = tag.contains("Camera")
+				? ItemStack.parseOptional(registries, tag.getCompound("Camera"))
+				: ItemStack.EMPTY;
 	}
 
 	@Override
-	protected void saveAdditional(CompoundTag tag) {
-		super.saveAdditional(tag);
+	protected void saveAdditional(CompoundTag tag, HolderLookup.Provider registries) {
+		super.saveAdditional(tag, registries);
 		if (!camera.isEmpty()) {
-			tag.put("Camera", camera.save(new CompoundTag()));
+			tag.put("Camera", camera.save(registries));
 		}
 	}
 
@@ -53,9 +56,7 @@ public class TripodBlockEntity extends BlockEntity {
 	}
 
 	@Override
-	public CompoundTag getUpdateTag() {
-		CompoundTag tag = new CompoundTag();
-		saveAdditional(tag);
-		return tag;
+	public CompoundTag getUpdateTag(HolderLookup.Provider registries) {
+		return saveWithoutMetadata(registries);
 	}
 }

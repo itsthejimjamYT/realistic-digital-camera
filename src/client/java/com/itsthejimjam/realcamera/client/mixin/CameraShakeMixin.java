@@ -18,7 +18,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * amplitude tracks shutter speed × focal length (the "1/focal" reciprocal rule). A
  * tripod nearby kills it; holding sneak (brace) roughly halves it.
  *
- * <p>See {@link DroneCameraMixin} for why 1.20.4 targets {@code setup(...)} rather than
+ * <p>See {@link DroneCameraMixin} for why 1.21.1 targets {@code setup(...)} rather than
  * {@code alignWithEntity(float)}; and {@code getYRot()}/{@code getXRot()} rather than the
  * shortened {@code yRot()}/{@code xRot()} accessor names.
  */

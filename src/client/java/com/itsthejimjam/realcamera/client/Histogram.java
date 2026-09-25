@@ -64,7 +64,7 @@ public final class Histogram {
 	}
 
 	/** Called at the end of the frame while photo mode is active and not capturing.
-	 *  1.20.4's {@code Screenshot.takeScreenshot} is synchronous (no downscale factor,
+	 *  1.21.1's {@code Screenshot.takeScreenshot} is synchronous (no downscale factor,
 	 *  no callback — unlike 26.2's async version), so this reads back and computes
 	 *  in-place rather than handing off to a callback. */
 	public static void maybeSample(RenderTarget target) {
@@ -115,7 +115,7 @@ public final class Histogram {
 		double weightTotal = 0.0;
 		for (int y = 0; y < h; y += PIXEL_STRIDE) {
 			for (int x = 0; x < w; x += PIXEL_STRIDE) {
-				int p = image.getPixelRGBA(x, y);
+				int p = Pixels.get(image, x, y);
 				int r = (p >> 16) & 0xFF;
 				int g = (p >> 8) & 0xFF;
 				int b = p & 0xFF;

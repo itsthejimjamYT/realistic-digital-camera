@@ -21,7 +21,7 @@ import net.minecraft.client.renderer.PostPass;
  * Longer focal length and wider aperture raise both; an ultra-wide lens collapses the
  * radius toward zero so almost everything stays in focus, like a real lens.
  *
- * <p>1.20.4 has no {@code GpuBuffer}/std140 uniform-buffer system — every uniform is set
+ * <p>1.21.1 has no {@code GpuBuffer}/std140 uniform-buffer system — every uniform is set
  * directly via {@code EffectInstance.getUniform(name).set(...)} on each pass's own
  * shader, found through {@link PostChainAccessor} (no buffer-swap "ensure" step needed).
  * {@code MaxRadiusFrac} is shared by three passes (the two pre-blurs and the DoF gather

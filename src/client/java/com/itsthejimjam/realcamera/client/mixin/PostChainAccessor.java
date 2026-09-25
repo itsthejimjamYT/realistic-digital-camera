@@ -13,7 +13,7 @@ import org.spongepowered.asm.mixin.gen.Accessor;
  * / {@code ExposureParams} / {@code FilmParams} / {@code AidParams} can reach each pass's
  * {@code EffectInstance} and push live uniform values every frame.
  *
- * <p>1.20.4 has no {@code GpuBuffer}-backed custom uniform blocks to swap in (that's a
+ * <p>1.21.1 has no {@code GpuBuffer}-backed custom uniform blocks to swap in (that's a
  * 26.2/Blaze3D concept) — each pass's {@code EffectInstance.getUniform(name).set(...)} is
  * called directly instead, so there's no {@code PostPassAccessor} equivalent needed here.
  */

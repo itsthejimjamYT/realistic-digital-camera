@@ -11,7 +11,7 @@ import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.util.StringRepresentable;
 import net.minecraft.world.InteractionHand;
-import net.minecraft.world.InteractionResult;
+import net.minecraft.world.ItemInteractionResult;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
@@ -160,17 +160,19 @@ public class TripodBlock extends BaseEntityBlock {
 
 	// --- interactions: always act on the LOWER half --------------------------
 
+	// 1.21.1 routes every right-click (empty hand included) through useItemOn first, so the
+	// whole interaction lives here. SKIP_DEFAULT_BLOCK_INTERACTION = "not handled, let the
+	// held item do its thing" (the old PASS).
 	@Override
-	public InteractionResult use(BlockState state, Level level, BlockPos pos,
+	protected ItemInteractionResult useItemOn(ItemStack stack, BlockState state, Level level, BlockPos pos,
 			Player player, InteractionHand hand, BlockHitResult hit) {
-		ItemStack stack = player.getItemInHand(hand);
 		BlockPos bp = basePos(state, pos);
 		BlockState bs = level.getBlockState(bp);
 
 		if (stack.isEmpty()) {
 			// A mounted stand: consume the click so vanilla does nothing; the client-side
 			// use-block callback runs first and takes you into photo mode.
-			return bs.getValue(MOUNTED) ? InteractionResult.SUCCESS : InteractionResult.PASS;
+			return bs.getValue(MOUNTED) ? ItemInteractionResult.SUCCESS : ItemInteractionResult.SKIP_DEFAULT_BLOCK_INTERACTION;
 		}
 
 		// Mounted stand + a lens/filter in hand: slot it straight into the camera.
@@ -192,11 +194,11 @@ public class TripodBlock extends BaseEntityBlock {
 				}
 				level.playSound(null, bp, SoundEvents.ITEM_FRAME_ADD_ITEM, SoundSource.BLOCKS, 0.7f, 1.5f);
 			}
-			return InteractionResult.SUCCESS;
+			return ItemInteractionResult.SUCCESS;
 		}
 
 		if (bs.getValue(MOUNTED) || !PhotoMode.isCameraBody(stack)) {
-			return InteractionResult.PASS;   // fall through (client callback may enter photo mode)
+			return ItemInteractionResult.SKIP_DEFAULT_BLOCK_INTERACTION;   // fall through (client callback may enter photo mode)
 		}
 		if (!level.isClientSide() && level.getBlockEntity(bp) instanceof TripodBlockEntity be) {
 			ItemStack mounted = stack.copyWithCount(1);
@@ -208,7 +210,7 @@ public class TripodBlock extends BaseEntityBlock {
 			stack.shrink(1);
 			level.playSound(null, bp, SoundEvents.ITEM_FRAME_ADD_ITEM, SoundSource.BLOCKS, 0.7f, 1.4f);
 		}
-		return InteractionResult.SUCCESS;
+		return ItemInteractionResult.SUCCESS;
 	}
 
 	@Override

@@ -7,13 +7,11 @@ import com.itsthejimjam.realcamera.PhotoMode;
 import com.mojang.blaze3d.pipeline.RenderTarget;
 
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
-import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
 
 import net.minecraft.client.CameraType;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.Input;
 import net.minecraft.client.player.KeyboardInput;
-import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
@@ -778,26 +776,16 @@ public final class PhotoModeSession {
 		cursorV = Mth.clamp(cursorV - (float) dy * CURSOR_SENS, 0.0f, 1.0f);
 	}
 
-	/** Set briefly by the shader-pack path so the depth-swap mixin can substitute the
-	 *  scene depth. 1.20.4 predates Blaze3D's GpuTextureView — a RenderTarget is the
-	 *  equivalent "thing you substitute a pass's input with" here. */
-	private static volatile RenderTarget depthViewOverride = null;
-
 	/** Diagnostics: log the shader-pack path state and the depth-view swap once per session. */
 	public static boolean shaderPathLogged = false;
 	public static boolean depthSwapLogged = false;
 	public static boolean afterLevelLogged = false;
 
-	public static RenderTarget depthViewOverride() {
-		return depthViewOverride;
-	}
-
-	public static void setDepthViewOverride(RenderTarget view) {
-		depthViewOverride = view;
-	}
-
-	/** Set by {@link PhotoCapture} during a long exposure: the post chain's colour input
-	 *  ({@code minecraft:main}) is replaced with the stacked image so DoF/grade still apply. */
+	/** Set by {@link PhotoCapture} during a long exposure's develop phase: the stacked image,
+	 *  copied over {@code minecraft:main}'s colour right before the effect chain runs (see
+	 *  {@code LevelPostMixin}) so DoF / grade / grain still apply to it. On 26.2 this is a
+	 *  texture view swapped in as the chain's input; 1.21.1's post chain has no per-input
+	 *  override point, so the copy does the same job. */
 	private static volatile RenderTarget colorViewOverride = null;
 
 	public static RenderTarget colorViewOverride() {
@@ -817,13 +805,25 @@ public final class PhotoModeSession {
 		}
 	}
 
-	/** Set the server tick rate (used to fast-forward the world through a long exposure). */
-	public static void setWorldTickRate(float rate) {
+	/** Advance the (already-frozen) world by exactly this many ticks, then stop — the
+	 *  same deterministic mechanism behind vanilla's {@code /tick step}. Long exposure
+	 *  uses this per sub-frame instead of a continuous boosted tick rate so the amount
+	 *  of game-time (and therefore sky/star rotation) covered by the shot depends only
+	 *  on shutter speed, never on how long a sub-frame's render/readback happens to take
+	 *  in real time. */
+	public static void stepWorldTicks(int ticks) {
 		Minecraft mc = Minecraft.getInstance();
 		if (mc.getSingleplayerServer() != null) {
 			mc.getSingleplayerServer().execute(
-					() -> mc.getSingleplayerServer().tickRateManager().setTickRate(rate));
+					() -> mc.getSingleplayerServer().tickRateManager().setFrozenTicksToRun(ticks));
 		}
+	}
+
+	/** True while the server is still working through a {@link #stepWorldTicks} request. */
+	public static boolean isWorldStepping() {
+		Minecraft mc = Minecraft.getInstance();
+		return mc.getSingleplayerServer() != null
+				&& mc.getSingleplayerServer().tickRateManager().frozenTicksToRun() > 0;
 	}
 
 	private PhotoModeSession() {
@@ -1104,7 +1104,7 @@ public final class PhotoModeSession {
 		// (Long exposure still briefly boosts the tick rate to fast-forward the shutter.)
 		active = true;
 		wasUseKeyDown = mc.options.keyUse.isDown();
-		// true = action-bar style (transient, bottom-center) — 1.20.4 has no
+		// true = action-bar style (transient, bottom-center) — 1.21.1 has no
 		// sendOverlayMessage() like 26.2; displayClientMessage's 2nd param picks the same
 		// behavior. false would post it as a permanent line in the chat log instead.
 		mc.player.displayClientMessage(Component.literal(mode == Mode.DRONE
@@ -1344,10 +1344,8 @@ public final class PhotoModeSession {
 				open = true;
 			}
 			if (open && mc.screen == null) {
-				FriendlyByteBuf buf = PacketByteBufs.create();
-				OpenLoadoutPayload.write(buf,
-						tripodPos == null ? java.util.Optional.empty() : java.util.Optional.of(tripodPos));
-				ClientPlayNetworking.send(OpenLoadoutPayload.CHANNEL, buf);
+				ClientPlayNetworking.send(new OpenLoadoutPayload(
+						tripodPos == null ? java.util.Optional.empty() : java.util.Optional.of(tripodPos)));
 			}
 		} else {
 			// Other devices: don't let the inventory key do anything odd mid-session.

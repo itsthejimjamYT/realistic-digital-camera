@@ -14,32 +14,28 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * Grabs a pending high-res capture in {@code Minecraft.runTick} (1.20.4's per-frame
- * method — later renamed {@code renderFrame}), right after the frame has fully rendered
- * — so {@code minecraft:main} holds the final composited image for every shader pack
- * (some shader packs run their sky/cloud composite this late). The framing overlay isn't
- * drawn during a capture, so grabbing at the tail stays clean.
+ * Brackets each frame for the shutter, in {@code Minecraft.runTick} (1.21.1's per-frame
+ * method — later renamed {@code renderFrame}):
  *
- * <p>Also does the window-resize + "chain ready" bookkeeping 26.2 does from inside its
- * DoF post-chain injection (see {@code LevelPostMixin}) — that injection point doesn't
- * exist here yet (1.20.4 predates the frame-graph rendering rewrite; see the class doc
- * on the NOT-YET-PORTED {@code LevelPostMixin}/{@code DofParams}), so for now a capture
- * completes without depth-of-field/film grading, but the resize → wait → grab state
- * machine still runs correctly: "chain ready" is reported as soon as the render target
- * reaches the capture size, since there's no real chain to wait on yet.
+ * <ul>
+ * <li>HEAD: make the real OS window the capture size (once per shot) before the frame
+ * renders — 26.2 does this from {@code GameRenderer.render}'s head.</li>
+ * <li>TAIL: grab a pending high-res capture once the frame has fully rendered, so
+ * {@code minecraft:main} holds the final composited image for every shader pack (some run
+ * their sky/cloud composite this late). The framing overlay isn't drawn during a capture,
+ * so grabbing at the tail stays clean.</li>
+ * </ul>
+ *
+ * <p>"Chain ready" is reported by the effect chain itself ({@code EffectChains}), once it
+ * has actually run at the capture size — not here.
  */
 @Mixin(Minecraft.class)
 public class FrameEndCaptureMixin {
 
 	@Inject(method = "runTick(Z)V", at = @At("HEAD"))
-	private void realcamera$prepareCaptureFrame(boolean tick, CallbackInfo ci) {
-		if (!PhotoModeSession.isActive() || !PhotoCapture.wantsBigFrame()) {
-			return;
-		}
-		PhotoCapture.ensureWindowSized();
-		RenderTarget main = Minecraft.getInstance().getMainRenderTarget();
-		if (main != null && main.width == PhotoCapture.overrideWidth() && main.height == PhotoCapture.overrideHeight()) {
-			PhotoCapture.markChainReady();
+	private void realcamera$sizeWindow(boolean tick, CallbackInfo ci) {
+		if (PhotoModeSession.isActive() && PhotoCapture.wantsBigFrame()) {
+			PhotoCapture.ensureWindowSized();
 		}
 	}
 

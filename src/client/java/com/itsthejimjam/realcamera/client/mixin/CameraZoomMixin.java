@@ -12,7 +12,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 /**
  * Applies the photo-mode zoom by shrinking the FOV each frame.
  *
- * <p>1.20.4 computes FOV in {@code GameRenderer.getFov(Camera, float, boolean)}, not on
+ * <p>1.21.1 computes FOV in {@code GameRenderer.getFov(Camera, float, boolean)}, not on
  * {@code Camera} itself (that split is a later refactor) — and it returns {@code double},
  * not {@code float}.
  */

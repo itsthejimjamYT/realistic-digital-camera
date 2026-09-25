@@ -19,7 +19,7 @@ import net.minecraft.client.renderer.PostPass;
  * ({@link CustomRecipes}) use the exact same model, so "Copy From" is a clean copy
  * rather than an approximation.
  *
- * <p>1.20.4 has no {@code GpuBuffer}/std140 uniform-buffer system — {@code apply(...)}
+ * <p>1.21.1 has no {@code GpuBuffer}/std140 uniform-buffer system — {@code apply(...)}
  * sets the {@code G0}..{@code G7} uniforms directly on the {@code blit} pass's
  * {@code EffectInstance} (via {@link PostChainAccessor}), instead of writing one shared
  * byte-layout block.

@@ -2,15 +2,10 @@
 
 A Fabric mod that adds a **fully functional digital camera** to Minecraft.
 
-> **This branch (`1.20.4`) targets Minecraft 1.20.4.** Playing 26.2 or 26.3? Switch to the
-> [`main-26.2`](../../tree/main-26.2) or [`26.3`](../../tree/26.3) branch instead — the
-> install steps below are branch-specific.
->
-> **Depth of field needs a shader pack on this version.** On Minecraft versions before
-> 26.2 the mod can only read scene depth through [Iris](https://modrinth.com/mod/iris), so
-> the real depth-of-field blur works when Iris is running a shader pack. Without one,
-> everything else still works (exposure, white balance, film looks, grain, long exposure,
-> bracketing) — there's just no blur.
+> **This branch (`1.21.1`) targets Minecraft 1.21.1.** Playing a different version? Switch
+> to the [`main-26.2`](../../tree/main-26.2), [`26.3`](../../tree/26.3) or
+> [`1.20.4`](../../tree/1.20.4) branch instead — the install steps below are branch-specific.
+> Depth of field works with or without a shader pack on this version.
 
 Pick an exposure mode, dial in aperture / shutter / ISO (or let the
 camera do it), fit a lens and a filter, choose your focus point, and take a shot that
@@ -36,14 +31,15 @@ renders real optical depth of field. Every photo is written out as a PNG on your
   lens is fitted and points the way you were facing when you set it down.
 - **Composition aids** — aspect-ratio framing guides, rule-of-thirds / golden / centre
   grids, a focus-peaking and clipping-warning overlay.
-- **Output** — up to 8K, with up to 4× supersampling, long exposure, and exposure bracketing.
+- **Output** — up to 8K, with up to 4× supersampling, long exposure, exposure bracketing
+  with in-mod HDR merge, and an optional 16-bit RAW mode.
 
 ## Crafting
 
 The **camera body** and the **Camera Workbench** itself are crafted at a normal crafting
 table. **Lenses, filters, the tripod and the camera drone** are crafted at the **Camera
-Workbench**. (JEI recipe browsing isn't available on the 1.20.4 version yet — use the
-recipe images below.)
+Workbench**. Install [JEI](https://modrinth.com/mod/jei) to browse the recipes in-game —
+its **+** button lays one straight into the bench from your inventory.
 
 ### Camera body &amp; workbench &nbsp;·&nbsp; *crafting table*
 
@@ -103,20 +99,26 @@ C:\Users\<you>\AppData\Roaming\.minecraft\photos\
 If you run a custom launcher (Modrinth App, Prism, MultiMC, …), it's the `photos` folder
 inside that instance / profile's game folder instead.
 
-**Bracketing** saves each exposure as its own separate file (`..._BRACKET_1of3_...`,
-etc.) — the mod does **not** merge them. Combine them yourself in an HDR / photo editor
-(Lightroom, Photoshop, Darktable, …).
+**Bracketing** is merged into one 16-bit HDR file (`..._HDR.png`) by default. Set **HDR
+Merge** to *Save Each* to get every exposure as its own JPEG with real EXIF
+(`..._BRACKET_1of3_...`) and combine them yourself in an HDR / photo editor (Lightroom,
+Photoshop, Darktable, …).
+
+**RAW mode** (Frame tab) additionally saves a 16-bit `..._enhanced.png` next to each
+photo, without the camera's contrast and grade baked in, for more room to edit.
+
+HDR merge and RAW mode both run while an [Iris](https://modrinth.com/mod/iris) shader pack is
+active. Without one, a bracket saves its frames as separate JPEGs and RAW mode is skipped.
 
 ## Install
 
-1. Install [Fabric Loader](https://fabricmc.net/use/installer/) for Minecraft 1.20.4.
+1. Install [Fabric Loader](https://fabricmc.net/use/installer/) for Minecraft 1.21.1.
 2. Download the mod `.jar` from the [Releases](../../releases) page — pick the build
-   marked **1.20.4** (e.g. `realcamera-1.0.1+1.20.4.jar`).
-3. Drop it, along with [Fabric API](https://modrinth.com/mod/fabric-api) for 1.20.4, into
+   tagged for 1.21.1 (e.g. `realcamera-1.0.1+1.21.1.jar`).
+3. Drop it, along with [Fabric API](https://modrinth.com/mod/fabric-api) for 1.21.1, into
    your `mods/` folder.
-4. For depth of field, also install [Iris](https://modrinth.com/mod/iris) and select a
-   shader pack (see the note at the top). [Sodium](https://modrinth.com/mod/sodium) is
-   optional.
+4. Optional: **Mod Menu** + **Cloth Config** for the in-game settings screen, and **JEI**
+   for the Camera Workbench recipes.
 
 ## Controls
 
@@ -132,7 +134,8 @@ Right-click a camera to pick it up. Then:
 
 ## Building
 
-Needs JDK 17.
+Needs JDK 25 to run Gradle (Loom 1.18); the mod itself targets Java 21, and `runClient`
+launches the game on a Java 21 toolchain.
 
 ```
 ./gradlew build

@@ -25,8 +25,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * <p>Only engaged while a shot is locked, a focus point is being picked, or the drone is
  * flying — ordinary handheld-camera head-look is left entirely to vanilla.
  *
- * <p>1.20.4's {@code turnPlayer()} takes no partial-tick parameter, and {@code Options}
- * only has a combined {@code invertYMouse()} (no separate X-axis invert yet).
+ * <p>1.21.1's {@code turnPlayer(double)} takes the frame's movement time (unused here), and
+ * {@code Options} only has a combined {@code invertYMouse()} (no separate X-axis invert yet).
  *
  * <p><b>Must zero {@code accumulatedDX}/{@code accumulatedDY} itself.</b> Vanilla's own
  * {@code turnPlayer()} body does that reset near its end (confirmed via {@code javap} —
@@ -47,8 +47,8 @@ public abstract class PhotoMouseMixin {
 	@Shadow
 	private double accumulatedDY;
 
-	@Inject(method = "turnPlayer()V", at = @At("HEAD"), cancellable = true)
-	private void realcamera$steer(CallbackInfo ci) {
+	@Inject(method = "turnPlayer(D)V", at = @At("HEAD"), cancellable = true)
+	private void realcamera$steer(double movementTime, CallbackInfo ci) {
 		if (!PhotoModeSession.isActive()) {
 			return;
 		}

@@ -4,13 +4,15 @@ import java.io.File;
 
 import com.itsthejimjam.realcamera.PhotoMode;
 import com.mojang.blaze3d.pipeline.RenderTarget;
+import com.mojang.blaze3d.pipeline.TextureTarget;
+import com.mojang.blaze3d.platform.GlStateManager;
 import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.platform.Window;
 
 import net.minecraft.client.Minecraft;
-import net.minecraft.Util;
 import net.minecraft.client.Screenshot;
 import net.minecraft.network.chat.Component;
+import net.minecraft.Util;
 
 import org.lwjgl.glfw.GLFW;
 
@@ -21,17 +23,15 @@ import org.lwjgl.glfw.GLFW;
  * {@code <gameDir>/photos/}.
  *
  * <p>When {@link LongExposure} is armed for a slow shutter the capture runs a small
- * state machine: boost the world tick rate to fast-forward it through the shutter's
- * worth of game time while stacking sub-frames on the CPU, drop the tick rate back to
- * normal, then grab.
+ * state machine: step the still-frozen world forward by a fixed tick count between each
+ * of a fixed number of sub-frames (so the shutter's worth of game-time elapses no matter
+ * how long rendering each sub-frame actually takes), stack them on the CPU, unfreeze,
+ * write the stacked image back into {@code minecraft:main} (copied over its colour right
+ * before the effect chain runs) so DoF / grade / grain still apply, then grab.
  *
- * <p><b>1.20.4 status:</b> {@code Screenshot.takeScreenshot} is synchronous here (no
- * downscale-factor param, no callback — unlike 26.2), so this box-filters the
- * supersampled readback down to output size by hand instead of asking Screenshot to do
- * it. A finished long-exposure stack is saved straight to disk rather than fed back
- * through the post-processing chain as a colour-input override — there's no DoF/grade
- * chain to feed it through yet (see {@link FilmParams}, {@link DofParams}); revisit once
- * that's ported.
+ * <p>1.21.1's {@code Screenshot.takeScreenshot} is synchronous (no downscale factor, no
+ * callback — unlike 26.2), so the GL readback happens inline on the render thread and the
+ * supersample box-filter + encode are handed to the IO pool by hand.
  */
 public final class PhotoCapture {
 
@@ -45,24 +45,30 @@ public final class PhotoCapture {
 	private static volatile boolean chainReady = false;
 	private static int waitFrames = 0;
 	private static final int MAX_WAIT_FRAMES = 24;
-	private static int resizeWaitFrames = 0;
-	// Generous: a heavy shader pack can genuinely take a while to reallocate every G-buffer
-	// at a big capture size. This is a last-resort escape hatch, not the primary fix — see
-	// ensureWindowSized()'s comment for why the resize itself should now land in ~1 frame.
-	private static final int MAX_RESIZE_WAIT_FRAMES = 200;
 
 	private static int savedWinW = 0;
 	private static int savedWinH = 0;
 	private static boolean windowResized = false;
+	private static int resizeWaitFrames = 0;
+	// Generous: a heavy shader pack can genuinely take a while to reallocate every G-buffer
+	// at a big capture size. This is a last-resort escape hatch, not the primary fix — see
+	// ensureWindowSized()'s comment for why the resize itself should land in ~1 frame.
+	private static final int MAX_RESIZE_WAIT_FRAMES = 200;
 
 	// --- long exposure ---
 	private static int longExpMode = LongExposure.OFF;
 	private static int subFrames = 0;
-	private static float boostRate = 20.0f;
+	private static int totalExposureTicks = 0;
+	private static int ticksSteppedSoFar = 0;
+	private static boolean waitingForStep = false;
 	private static int warmupLeft = 0;
 	private static int stacked = 0;
 	private static int lastStackFrames = 0;
+	private static volatile boolean readbackInFlight = false;
 	private static final ExposureStack STACK = new ExposureStack();
+	/** The developed long-exposure stack, uploaded once and copied over {@code minecraft:main}
+	 *  every frame of the develop phase (see {@code LevelPostMixin}). */
+	private static TextureTarget stackTarget;
 
 	// --- exposure bracketing ---
 	private static float[] bracketEvs = null;   // null = not a bracketed capture
@@ -91,6 +97,17 @@ public final class PhotoCapture {
 			return;
 		}
 		CameraSounds.shutter(PhotoModeSession.deviceItem());
+		// Freeze the instant the shutter is pressed — the resize/settle/render sequence
+		// this triggers takes multiple real-world frames (several seconds at 8K under a
+		// heavy shader pack), and the world was ticking normally the whole time, so the
+		// sun/clouds/weather could visibly move between "the shot I clicked" and "the shot
+		// that actually got saved." Bracket sequences had it worse: each frame needs its
+		// own settle-and-capture cycle, so consecutive frames could span real seconds apart
+		// — too different to merge as HDR. Long exposure stays frozen the whole way
+		// through and instead steps the world forward by an exact tick count per
+		// sub-frame (see EXPOSING below), so this hold applies for the entire capture,
+		// not just the resize/settle wait.
+		PhotoModeSession.setWorldFrozen(true);
 		double sec = PhotoModeSession.getShutterSeconds();
 		// Bracketing takes precedence over the automatic long exposure for a capture.
 		if (Bracket.on()) {
@@ -107,15 +124,30 @@ public final class PhotoCapture {
 		if (longExpMode != LongExposure.OFF && PhotoModeSession.handheldShakeShot()) {
 			subFrames = Math.max(subFrames, 18);   // smoother sweep + dither averaging
 		}
-		boostRate = LongExposure.boostTickRate(sec, subFrames);
+		totalExposureTicks = LongExposure.totalTicks(sec);
+		ticksSteppedSoFar = 0;
+		waitingForStep = false;
 		phase = RESIZING;
 		grabQueued = false;
 		chainReady = false;
 		waitFrames = 0;
-		resizeWaitFrames = 0;
 		windowResized = false;
+		resizeWaitFrames = 0;
 		stacked = 0;
 		warmupLeft = 3;
+		readbackInFlight = false;
+
+		if (com.itsthejimjam.realcamera.client.config.PhotoConfig.get().saveEnhancedFile && !wantsEnhancedFile()
+				&& bracketEvs == null && longExpMode == LongExposure.OFF) {
+			// Enabled, and otherwise eligible, but over the resolution cap for this shot —
+			// say so, rather than silently not producing the second file.
+			Minecraft mc = Minecraft.getInstance();
+			if (mc.player != null) {
+				mc.player.displayClientMessage(Component.literal(ShaderPackCompat.shaderPackActive()
+						? "RAW mode skipped — over the " + ENHANCED_MAX_EDGE + "px cap for now"
+						: "RAW mode needs a shader pack — skipped"), true);
+			}
+		}
 	}
 
 	public static boolean wantsBigFrame() {
@@ -132,6 +164,74 @@ public final class PhotoCapture {
 	/** This whole capture is a long exposure (any phase). */
 	public static boolean isLongExposureCapture() {
 		return phase != IDLE && longExpMode != LongExposure.OFF;
+	}
+
+	/** Long-edge cap on the enhanced-file capture. A large enhanced capture caused a full
+	 *  system freeze (GPU-driver-level, not something Java can catch or recover from)
+	 *  before the real root causes (undersized uniform buffer, resize-ramp texture churn,
+	 *  release-before-read ordering) were found and fixed — see HdrCapture.java and
+	 *  finishCapture()/readAndSave(). With those fixed, 3840 (the 4K tier) was confirmed
+	 *  stable at x1 supersample. Raised to 7680 to also cover the 6K/8K tiers (there is no
+	 *  size between the mod's fixed resolution tiers to test incrementally with) — test
+	 *  6K then 8K one at a time, at x1 supersample, watching Task Manager, before trusting
+	 *  either. Drop back to a lower tier immediately if either misbehaves. */
+	private static final int ENHANCED_MAX_EDGE = 7680;
+
+	/** HARD KILL SWITCH. A large capture with "Save Enhanced File" on caused a full
+	 *  system freeze requiring a hard restart — well beyond an application crash, into
+	 *  GPU-driver-hang territory. Re-enabled after: (a) the likely-real root cause was
+	 *  found (the earlier freeze tests turned out to have supersample at x4, meaning the
+	 *  actual render size was far larger than the resolution label suggested — e.g. a
+	 *  "1080p" shot was really rendering near 8K internally), (b) real hardening (resize
+	 *  churn during the resolution ramp-up, GPU memory released between captures), and
+	 *  (c) the cap tightened to exactly the size actually confirmed safe. Re-test
+	 *  incrementally, at x1 supersample, watching Task Manager — do not jump straight
+	 *  back to a large/high-supersample combination that hasn't been individually
+	 *  verified. */
+	private static final boolean ENHANCED_FILE_DISABLED = false;
+
+	/** True while the high-precision enhanced file should be captured alongside the
+	 *  normal photo — a single shot or a long exposure (HdrCapture sources the stacked
+	 *  result via {@code PhotoModeSession.colorViewOverride()} for the latter, same as the
+	 *  live grade chain does; see HdrCapture's class doc). Brackets are handled instead by
+	 *  {@link #wantsHdrMerge()}, which fuses the whole burst into one file rather than
+	 *  enhancing a single frame. */
+	public static boolean wantsEnhancedFile() {
+		if (ENHANCED_FILE_DISABLED) {
+			return false;
+		}
+		if (!wantsBigFrame() || !com.itsthejimjam.realcamera.client.config.PhotoConfig.get().saveEnhancedFile
+				|| bracketEvs != null) {
+			return false;
+		}
+		// HdrCapture.capture() is only ever driven from the shader-pack path (see
+		// CaptureHookMixin) — without a shader pack nothing ever fills its target, so
+		// promising a RAW file here would silently produce nothing.
+		if (!ShaderPackCompat.shaderPackActive()) {
+			return false;
+		}
+		return Math.max(overrideWidth(), overrideHeight()) <= ENHANCED_MAX_EDGE;
+	}
+
+	/** True while a bracket sequence's frames should be fused in-mod into one 16-bit HDR
+	 *  file (see HdrMerge) instead of saved separately — reuses the exact same
+	 *  HdrCapture pipeline, resolution cap, and kill switch as RAW Mode, just driven by
+	 *  the bracket loop instead of a single shot. */
+	public static boolean wantsHdrMerge() {
+		if (ENHANCED_FILE_DISABLED) {
+			return false;
+		}
+		if (!wantsBigFrame() || !com.itsthejimjam.realcamera.client.config.PhotoConfig.get().autoMergeHdr
+				|| bracketEvs == null) {
+			return false;
+		}
+		// Same reason as wantsEnhancedFile(): with no shader pack there's never any HDR data
+		// to merge, and saveBracketFrame() skips the normal JPEGs whenever this is true — so
+		// without this check a bracket taken without a shader pack saved nothing at all.
+		if (!ShaderPackCompat.shaderPackActive()) {
+			return false;
+		}
+		return Math.max(overrideWidth(), overrideHeight()) <= ENHANCED_MAX_EDGE;
 	}
 
 	/** Progress through the sub-frame stack, 0..1 (0 when not stacking). Drives the
@@ -182,13 +282,32 @@ public final class PhotoCapture {
 			}
 			return new int[] {w, h};
 		}
-		int ss = Framing.effectiveSupersample();
+		int ss = effectiveSupersampleForCapture();
 		return new int[] {Framing.outputWidth() * ss, Framing.outputHeight() * ss};
+	}
+
+	/** Supersample actually used for a capture — forced to x1 when the enhanced file is
+	 *  on. That pipeline's own VRAM footprint (three extra full-size buffers for DoF, plus
+	 *  the RGBA16F expose target — see HdrCapture) eats into the headroom that a plain
+	 *  capture at the same resolution would otherwise have; an 8K x SS4 capture (which
+	 *  Framing.effectiveSupersample() already reduces to an internal render no bigger than
+	 *  a bare 8K x SS1 shot) crashed with the enhanced file on, right after DoF
+	 *  reproduction was added, even though the same resolution had been stable before that
+	 *  addition. Must be used everywhere the render size is computed AND wherever the
+	 *  captured image is downsampled back to output size (see grabDownscale) — the two
+	 *  have to agree or the downsample scales wrong. */
+	private static int effectiveSupersampleForCapture() {
+		com.itsthejimjam.realcamera.client.config.PhotoConfig cfg =
+				com.itsthejimjam.realcamera.client.config.PhotoConfig.get();
+		if ((cfg.saveEnhancedFile || (cfg.autoMergeHdr && Bracket.on())) && ShaderPackCompat.shaderPackActive()) {
+			return 1;
+		}
+		return Framing.effectiveSupersample();
 	}
 
 	/** Downscale applied when grabbing (1 for long exposure — it renders at output size). */
 	private static int grabDownscale() {
-		return longExpMode != LongExposure.OFF ? 1 : Framing.effectiveSupersample();
+		return longExpMode != LongExposure.OFF ? 1 : effectiveSupersampleForCapture();
 	}
 
 	public static void ensureWindowSized() {
@@ -205,16 +324,13 @@ public final class PhotoCapture {
 		if (!w.isFullscreen()) {
 			GLFW.glfwSetWindowSize(w.getWindow(), overrideWidth(), overrideHeight());
 		}
-		// 1.20.4's own GLFW framebuffer-resize callback (Window.onFramebufferResize) decides
-		// whether to call Minecraft.resizeDisplay() by comparing Window.getWidth()/getHeight()
-		// before and after the resize — but WindowSizeMixin spoofs those exact same accessors
-		// to always report the override size while wantsBigFrame() is true, so that
-		// before/after comparison never sees a change and the implicit callback never fires.
-		// mainRenderTarget then never grows to the capture size and the shutter hangs forever
-		// waiting for it (confirmed via javap on Window.onFramebufferResize's bytecode — it
-		// re-reads getWidth()/getHeight(), not the raw framebufferWidth/Height fields, to
-		// decide). Drive the resize directly instead; also required in fullscreen, where
-		// there's no real window resize to ever trigger a callback at all.
+		// 1.21.1's GLFW framebuffer-resize callback (Window.onFramebufferResize) only calls
+		// Minecraft.resizeDisplay() when Window.getWidth()/getHeight() change across the
+		// resize — but WindowSizeMixin spoofs exactly those accessors to the override size
+		// while wantsBigFrame() is true, so the comparison never sees a change and the
+		// callback never fires. mainRenderTarget would then never grow to the capture size
+		// and the shutter would wait forever. Drive the resize directly instead; also needed
+		// in fullscreen, where there's no real window resize to trigger a callback at all.
 		Minecraft.getInstance().resizeDisplay();
 	}
 
@@ -225,11 +341,11 @@ public final class PhotoCapture {
 		Window w = Minecraft.getInstance().getWindow();
 		if (!w.isFullscreen()) {
 			GLFW.glfwSetWindowSize(w.getWindow(), savedWinW, savedWinH);
-			// Same self-cancelling-spoof issue as ensureWindowSized() above, in reverse —
-			// callers reset phase to IDLE before calling this, so getWidth()/getHeight() are
-			// unspoofed here and resizeDisplay() correctly snaps mainRenderTarget back down.
-			Minecraft.getInstance().resizeDisplay();
 		}
+		// Same self-cancelling spoof as ensureWindowSized(), in reverse — callers reset phase
+		// to IDLE before calling this, so getWidth()/getHeight() are unspoofed here and
+		// resizeDisplay() snaps mainRenderTarget back down (fullscreen included).
+		Minecraft.getInstance().resizeDisplay();
 		savedWinW = 0;
 		savedWinH = 0;
 	}
@@ -271,6 +387,9 @@ public final class PhotoCapture {
 				chainReady = false;
 				waitFrames = 0;
 				warmupLeft = 8; // extra settle for the shader pack's dither/TAA after the resize
+				if (wantsHdrMerge()) {
+					HdrMerge.begin(mainTarget.width, mainTarget.height, bracketEvs.length);
+				}
 				phase = EXPOSING;
 				return;
 			}
@@ -278,16 +397,16 @@ public final class PhotoCapture {
 				grabIfReady(mainTarget);
 				return;
 			}
-			// begin the exposure: run the world through the shutter time
+			// begin the exposure: the world stays frozen and gets stepped forward by an
+			// exact tick count per sub-frame below, instead of unfreezing and racing a
+			// boosted tick rate against however long each sub-frame takes to render.
 			STACK.begin(mainTarget.width, mainTarget.height);
-			PhotoModeSession.setWorldFrozen(false);
-			PhotoModeSession.setWorldTickRate(boostRate);
 			phase = EXPOSING;
 			return;
 		}
 
 		if (phase == EXPOSING && bracketEvs != null) {
-			if (!atSize) {
+			if (!atSize || readbackInFlight) {
 				return;
 			}
 			if (bracketIdx >= bracketEvs.length) {
@@ -317,15 +436,35 @@ public final class PhotoCapture {
 			if (!chainReady && waitFrames++ < MAX_WAIT_FRAMES) {
 				return;
 			}
+			readbackInFlight = true;
 			int frameNo = bracketIdx + 1;
 			float ev = bracketEvs[bracketIdx];
 			int total = bracketEvs.length;
 			int ss = grabDownscale();
+			if (wantsHdrMerge()) {
+				boolean isLastFrame = frameNo == total;
+				// Runs on the render thread (see HdrCapture.readForMerge) — addFrame and,
+				// for the last frame, finishAsync just submit to HdrMerge's own executor,
+				// so calling them in this order here guarantees that ordering there too.
+				HdrCapture.readForMerge(isLastFrame, (w, h, raw) -> {
+					HdrMerge.addFrame(w, h, raw);
+					if (isLastFrame) {
+						File dir = new File(Minecraft.getInstance().gameDirectory, "photos");
+						File hdrFile = new File(dir, bracketStamp + "_HDR.png");
+						PngWriter.Exif hdrExif = new PngWriter.Exif(PhotoModeSession.getShutterSeconds(),
+								PhotoModeSession.getAperture(), PhotoModeSession.getIso(),
+								PhotoModeSession.getExposureComp(), System.currentTimeMillis());
+						HdrMerge.finishAsync(hdrFile, hdrExif, () -> {
+							Minecraft mc = Minecraft.getInstance();
+							mc.execute(() -> announce(mc, "HDR merge saved   " + hdrFile.getName()));
+						});
+					}
+				});
+			}
 			try {
-				NativeImage image = Screenshot.takeScreenshot(mainTarget);
-				// Downscale + encode off the render thread — see grabIfReady's comment.
-				saveBracketFrame(image, ss, frameNo, total, ev);
+				saveBracketFrame(Screenshot.takeScreenshot(mainTarget), ss, frameNo, total, ev);
 			} catch (Throwable t) {
+				readbackInFlight = false;
 				bracketIdx++;
 				PhotoMode.LOGGER.warn("[Photo Mode] bracket frame readback failed: {}", t.toString());
 			}
@@ -340,29 +479,42 @@ public final class PhotoCapture {
 				warmupLeft--;
 				return;
 			}
+			if (readbackInFlight) {
+				return;
+			}
 			if (stacked < subFrames) {
+				if (waitingForStep) {
+					if (PhotoModeSession.isWorldStepping()) {
+						return; // still advancing ticks for this sub-frame
+					}
+					waitingForStep = false;
+				} else {
+					// Evenly distribute totalExposureTicks across subFrames sub-frames
+					// (target cumulative ticks for slot N, minus what's already been run,
+					// avoids drift from rounding each slot's share independently).
+					int targetCumulative = (int) Math.round((double) (stacked + 1) * totalExposureTicks / subFrames);
+					int stepNow = Math.max(0, targetCumulative - ticksSteppedSoFar);
+					ticksSteppedSoFar = targetCumulative;
+					if (stepNow > 0) {
+						PhotoModeSession.stepWorldTicks(stepNow);
+						waitingForStep = true;
+						return; // wait for it to land before capturing this sub-frame
+					}
+				}
 				try (NativeImage image = Screenshot.takeScreenshot(mainTarget)) {
 					STACK.add(image);
+					stacked++;
 				} catch (Throwable t) {
 					PhotoMode.LOGGER.warn("[Photo Mode] stack readback failed: {}", t.toString());
 					stacked = subFrames; // bail to develop
-				} finally {
-					stacked++;
 				}
 				return;
 			}
-			// stacking done -> develop. Drop the tick rate back to normal but leave the
-			// world running (photo mode no longer freezes it).
-			PhotoModeSession.setWorldTickRate(20.0f);
-			// developStack() already saves the stacked image and calls finishCapture()
-			// itself (phase -> IDLE) — it does NOT hand off to the DEVELOP/grabIfReady path
-			// the way a single shot does (grabIfReady would just grab a second, unstacked,
-			// raw frame on top of it). Setting phase = DEVELOP here used to immediately
-			// clobber the IDLE finishCapture() just set, permanently stuck: overrideWidth/
-			// Height() no longer matched the (now-restored) window once longExpMode was
-			// reset, so grabIfReady()'s size check never passed again — the exact "photo
-			// saves fine but the UI never comes back" freeze.
-			developStack();
+			// stacking done -> develop. Unfreeze — the world stayed frozen through every
+			// stepped tick above, and photo mode no longer freezes it from here.
+			PhotoModeSession.setWorldFrozen(false);
+			developStack(mainTarget.width, mainTarget.height);
+			phase = DEVELOP;
 			return;
 		}
 
@@ -372,65 +524,66 @@ public final class PhotoCapture {
 	}
 
 	/** Write one bracket frame. All frames of a burst share {@link #bracketStamp} and are
-	 *  tagged {@code BRACKET_<i>of<N>_<ev>} so they sort together for merging later. */
+	 *  tagged {@code BRACKET_<i>of<N>_<ev>} so they sort together for merging in an editor
+	 *  later. {@code image} is the full-size readback; the supersample downscale and the
+	 *  encode both run on the IO pool. */
 	private static void saveBracketFrame(NativeImage image, int downscaleFactor, int frameNo, int total, float ev) {
 		bracketIdx++;
+		readbackInFlight = false;
+		if (wantsHdrMerge()) {
+			// The merged file (see HdrMerge, dispatched alongside this readback) replaces
+			// the individual bracket files when Auto Merge is on — either/or, per the
+			// toggle, so there's no reason to also encode N JPEGs nobody asked to keep.
+			image.close();
+			return;
+		}
 		String evLabel = String.format(java.util.Locale.ROOT, "%+.1fEV", ev).replace("+0.0EV", "0.0EV");
-		String name = bracketStamp + "_BRACKET_" + frameNo + "of" + total + "_" + evLabel + ".png";
+		// JPEG, not PNG: Lightroom's Photo Merge -> HDR doesn't treat PNG as an eligible
+		// source at all (confirmed — embedding a correct eXIf chunk wasn't enough), but
+		// JPEG+EXIF is exactly what every real camera outputs for a bracket, so it's the
+		// combination every merge tool is actually built around.
+		String name = bracketStamp + "_BRACKET_" + frameNo + "of" + total + "_" + evLabel + ".jpg";
 		Minecraft mc = Minecraft.getInstance();
 		File dir = new File(mc.gameDirectory, "photos");
 		File file = new File(dir, name);
+		// This frame's actual exposure bias — the base compensation plus this bracket
+		// slot's EV offset — is exactly what Lightroom's Photo Merge -> HDR reads to tell
+		// the frames of a bracket apart and order them; shutter/aperture/ISO stay the
+		// camera's real settings, unchanged across the burst.
+		PngWriter.Exif exif = new PngWriter.Exif(PhotoModeSession.getShutterSeconds(), PhotoModeSession.getAperture(),
+				PhotoModeSession.getIso(), PhotoModeSession.getExposureComp() + ev, System.currentTimeMillis());
 		Util.ioPool().execute(() -> {
 			try (NativeImage scaled = downscale(image, downscaleFactor)) {
 				dir.mkdirs();
-				scaled.writeToFile(file);
+				PngWriter.writeJpeg(file, scaled, exif, 0.95f);
 			} catch (Exception e) {
 				PhotoMode.LOGGER.error("[Photo Mode] failed to save bracket frame", e);
 			}
 		});
 	}
 
-	/** No post-processing chain to feed the stack back through yet — save it straight to
-	 *  disk instead (see the class doc). Does its own complete save + announce +
-	 *  {@link #finishCapture()} — the caller must NOT also transition to DEVELOP /
-	 *  call {@link #grabIfReady}, or it double-captures a second, unstacked raw frame
-	 *  on top of the averaged one. */
-	private static void developStack() {
+	private static void developStack(int w, int h) {
 		try {
-			// STACK.finish() has to run here, not on the io pool: it resets the shared
-			// STACK singleton's fields as its last step, and finishCapture() below (also
-			// on this thread) touches those same fields — running finish() on a
-			// background thread would race the two. It's bounded to
-			// LongExposure.MAX_EDGE^2 pixels (~16M worst case), a one-time cost per long
-			// exposure, not per frame — smaller and rarer than the downscale stall this
-			// was modeled on, so left synchronous.
 			lastStackFrames = STACK.frames();
-			NativeImage stackedImage = STACK.finish();
-			Minecraft mc = Minecraft.getInstance();
-			File dir = new File(mc.gameDirectory, "photos");
-			File file = new File(dir, Util.getFilenameFormattedDateTime() + ".png");
-			int w = stackedImage.getWidth();
-			int h = stackedImage.getHeight();
-			Util.ioPool().execute(() -> {
-				try (stackedImage) {
-					dir.mkdirs();
-					stackedImage.writeToFile(file);
-					mc.execute(() -> announce(mc, "Saved  " + file.getName() + "   " + w + "×" + h
-							+ "  (" + LongExposure.OPTIONS[longExpMode] + " · " + lastStackFrames + " frames)"));
-				} catch (Exception e) {
-					PhotoMode.LOGGER.error("[Photo Mode] failed to save long exposure", e);
-					mc.execute(() -> announce(mc, "Photo save failed — see log"));
+			try (NativeImage stackedImage = STACK.finish()) {
+				if (stackTarget == null) {
+					stackTarget = new TextureTarget(w, h, false, Minecraft.ON_OSX);
+				} else if (stackTarget.width != w || stackTarget.height != h) {
+					stackTarget.resize(w, h, Minecraft.ON_OSX);
 				}
-			});
-			finishCapture();
+				// finish() already wrote the rows bottom-up, matching GL's texture origin.
+				GlStateManager._bindTexture(stackTarget.getColorTextureId());
+				stackedImage.upload(0, 0, 0, false);
+			}
+			PhotoModeSession.setColorViewOverride(stackTarget);
 		} catch (Throwable t) {
 			PhotoMode.LOGGER.error("[Photo Mode] developing the exposure stack failed", t);
-			finishCapture();
+			phase = DEVELOP; // grabIfReady will still fire a fallback grab of the raw frame
 		}
 	}
 
 	/** Box-filter downscale by an integer factor (supersampling). Factor 1 returns the
-	 *  input image itself, unclosed. */
+	 *  input image itself, unclosed; otherwise the input is closed. */
 	private static NativeImage downscale(NativeImage src, int factor) {
 		if (factor <= 1) {
 			return src;
@@ -442,20 +595,21 @@ public final class PhotoCapture {
 			int area = factor * factor;
 			for (int oy = 0; oy < outH; oy++) {
 				for (int ox = 0; ox < outW; ox++) {
-					long r = 0, g = 0, b = 0, a = 0;
+					long c0 = 0, c1 = 0, c2 = 0, a = 0;
 					int sx0 = ox * factor;
 					int sy0 = oy * factor;
 					for (int dy = 0; dy < factor; dy++) {
 						for (int dx = 0; dx < factor; dx++) {
 							int p = src.getPixelRGBA(sx0 + dx, sy0 + dy);
-							r += (p >> 16) & 0xFF;
-							g += (p >> 8) & 0xFF;
-							b += p & 0xFF;
+							c0 += (p >> 16) & 0xFF;
+							c1 += (p >> 8) & 0xFF;
+							c2 += p & 0xFF;
 							a += (p >>> 24) & 0xFF;
 						}
 					}
-					int rgba = (int) (((a / area) << 24) | ((r / area) << 16) | ((g / area) << 8) | (b / area));
-					out.setPixelRGBA(ox, oy, rgba);
+					// Channel order doesn't matter here — each byte is averaged in place.
+					int v = (int) (((a / area) << 24) | ((c0 / area) << 16) | ((c1 / area) << 8) | (c2 / area));
+					out.setPixelRGBA(ox, oy, v);
 				}
 			}
 		} finally {
@@ -486,31 +640,61 @@ public final class PhotoCapture {
 		boolean wasLong = longExpMode != LongExposure.OFF;
 		String modeNote = wasLong ? "  (" + LongExposure.OPTIONS[longExpMode] + " · " + lastStackFrames + " frames)" : "";
 
-		// The GL readback itself has to happen here (needs the render thread's GL
-		// context), but everything after it — the box-filter downscale (a plain Java
-		// pixel loop; at 4K x SS2 that's tens of millions of iterations) and the PNG
-		// encode/write — must NOT run on the render thread, or a capture visibly
-		// freezes the game for several seconds. Hand the raw image to the io pool
-		// immediately and do the rest there.
+		PngWriter.Exif exif = new PngWriter.Exif(PhotoModeSession.getShutterSeconds(), PhotoModeSession.getAperture(),
+				PhotoModeSession.getIso(), PhotoModeSession.getExposureComp(), System.currentTimeMillis());
+		boolean wantsEnhanced = wantsEnhancedFile();
+
+		// The GL readback has to happen here, on the render thread; everything after it —
+		// the box-filter downscale (tens of millions of pixel reads at 4K x SS2) and the PNG
+		// encode — runs on the IO pool so a capture doesn't freeze the game for seconds.
 		NativeImage image = Screenshot.takeScreenshot(mainTarget);
 		finishCapture();
-		Minecraft mc = Minecraft.getInstance();
-		File dir = new File(mc.gameDirectory, "photos");
-		File file = new File(dir, Util.getFilenameFormattedDateTime() + ".png");
-		Util.ioPool().execute(() -> {
-			try (NativeImage scaled = downscale(image, ss)) {
+		String stamp = Util.getFilenameFormattedDateTime();
+		// Isolated from the normal save below on purpose: this is new, lower-level GPU
+		// code (see HdrCapture) — a failure here must never take the normal, already-
+		// working photo save down with it.
+		if (wantsEnhanced) {
+			try {
+				File dir = new File(Minecraft.getInstance().gameDirectory, "photos");
 				dir.mkdirs();
-				scaled.writeToFile(file);
-				mc.execute(() -> announce(mc, "Saved  " + file.getName() + "   " + outW + "×" + outH + modeNote));
+				HdrCapture.readAndSave(new File(dir, stamp + "_enhanced.png"), exif);
 			} catch (Exception e) {
-				PhotoMode.LOGGER.error("[Photo Mode] failed to save photo", e);
-				mc.execute(() -> announce(mc, "Photo save failed — see log"));
+				PhotoMode.LOGGER.error("[Photo Mode] enhanced file capture failed", e);
 			}
-		});
+		}
+		try {
+			Minecraft mc = Minecraft.getInstance();
+			File dir = new File(mc.gameDirectory, "photos");
+			File file = new File(dir, stamp + ".png");
+			Util.ioPool().execute(() -> {
+				try (NativeImage scaled = downscale(image, ss)) {
+					dir.mkdirs();
+					// Vanilla writer, not PngWriter: the hand-rolled PNG/EXIF encoder was
+					// only ever verified at small resolutions, and a system-freeze-level
+					// crash appeared at 4K the same day it was wired into every normal
+					// capture (not just enhanced ones, which are separately disabled).
+					// Reverting the one normal-photo save path back to the thing that's
+					// been stable for this mod's whole history until that's understood.
+					scaled.writeToFile(file);
+					mc.execute(() -> announce(mc, "Saved  " + file.getName() + "   " + outW + "×" + outH + modeNote));
+				} catch (Exception e) {
+					PhotoMode.LOGGER.error("[Photo Mode] failed to save photo", e);
+					mc.execute(() -> announce(mc, "Photo save failed — see log"));
+				}
+			});
+		} catch (Exception e) {
+			PhotoMode.LOGGER.error("[Photo Mode] capture failed", e);
+			image.close();
+		}
 	}
 
-	/** Tear the capture state down. */
+	/** Tear the capture state down. NOT the place to release HdrCapture's texture — this
+	 *  runs before the enhanced-file readback (see grabIfReady), and destroying it here
+	 *  would leave readAndSave with nothing to read. HdrCapture releases itself once its
+	 *  own readback is done (see readAndSave). */
 	private static void finishCapture() {
+		PhotoModeSession.setWorldFrozen(false);
+		PhotoModeSession.setColorViewOverride(null);
 		STACK.reset();
 		// Clear phase before restoring the window — restoreWindow()'s shrink-resize needs
 		// getWidth()/getHeight() unspoofed (see its comment) to snap mainRenderTarget back down.
@@ -523,18 +707,20 @@ public final class PhotoCapture {
 	}
 
 	public static void reset() {
-		if (phase == EXPOSING || phase == DEVELOP) {
-			PhotoModeSession.setWorldTickRate(20.0f);
-		}
+		PhotoModeSession.setWorldFrozen(false);
+		PhotoModeSession.setColorViewOverride(null);
 		STACK.reset();
+		HdrCapture.release();
 		phase = IDLE;
 		restoreWindow();
 		grabQueued = false;
 		chainReady = false;
 		waitFrames = 0;
-		resizeWaitFrames = 0;
 		windowResized = false;
+		resizeWaitFrames = 0;
 		stacked = 0;
+		ticksSteppedSoFar = 0;
+		waitingForStep = false;
 		longExpMode = LongExposure.OFF;
 		bracketEvs = null;
 		bracketBiasEv = 0.0f;

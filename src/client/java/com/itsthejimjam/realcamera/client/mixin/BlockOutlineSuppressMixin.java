@@ -13,7 +13,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * The black block-targeting outline is a game HUD cue, not part of the shot — keep it
  * out of the frame while photo mode is active.
  *
- * <p>1.20.4's method is {@code renderHitOutline} (the {@code submitXxx} naming is a
+ * <p>1.21.1's method is {@code renderHitOutline} (the {@code submitXxx} naming is a
  * later rendering-rewrite convention).
  */
 @Mixin(LevelRenderer.class)

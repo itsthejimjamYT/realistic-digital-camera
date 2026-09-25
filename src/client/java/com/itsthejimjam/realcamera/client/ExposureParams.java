@@ -21,7 +21,7 @@ import net.minecraft.util.Mth;
  * a faster shutter darkens the frame; opening up, a slower shutter, or a higher ISO
  * brightens it — exactly like balancing a real exposure.
  *
- * <p>1.20.4: no std140 buffer — uniforms are set directly on the {@code blit} pass's
+ * <p>1.21.1: no std140 buffer — uniforms are set directly on the {@code blit} pass's
  * {@code EffectInstance} (index 3 of the chain).
  */
 public final class ExposureParams {
@@ -85,7 +85,7 @@ public final class ExposureParams {
 		// vanilla field (0 = day, 11 = night). ClientLevel ALSO has a same-named
 		// getSkyDarken(float partialTick) overload with a completely different, unrelated
 		// range (~0.2 at night .. ~1.0 at day, vanilla's per-frame sky/fog blend factor,
-		// confirmed via javap on ClientLevel's actual bytecode) — the 1.20.4 port picked
+		// confirmed via javap on ClientLevel's actual bytecode) — the 1.20.4 port originally picked
 		// that overload by mistake. Dividing THAT by 11 collapses day and night to nearly
 		// the same tiny fraction, so this always evaluated to ~0.95-1.0 regardless of the
 		// actual time of day and the night-darkening feature never engaged.

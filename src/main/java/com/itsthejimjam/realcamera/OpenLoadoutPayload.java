@@ -3,31 +3,26 @@ package com.itsthejimjam.realcamera;
 import java.util.Optional;
 
 import net.minecraft.core.BlockPos;
-import net.minecraft.network.FriendlyByteBuf;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.ByteBufCodecs;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 
 /**
  * Client -> server: "open my camera body's loadout menu". Sent from the in-photo-mode
  * "ATTACH A LENS" prompt / the inventory key while shooting, so you can swap glass
  * without leaving the finder. {@code tripod} present = the body mounted on that stand;
  * empty = the body in the main hand.
- *
- * <p>1.20.4 has no {@code CustomPacketPayload}/codec system yet, so this is a plain
- * channel id + raw {@link FriendlyByteBuf} read/write instead of a record type.
  */
-public final class OpenLoadoutPayload {
+public record OpenLoadoutPayload(Optional<BlockPos> tripod) implements CustomPacketPayload {
 
-	public static final ResourceLocation CHANNEL = PhotoMode.id("open_loadout");
+	public static final Type<OpenLoadoutPayload> TYPE = new Type<>(PhotoMode.id("open_loadout"));
+	public static final StreamCodec<RegistryFriendlyByteBuf, OpenLoadoutPayload> CODEC = StreamCodec.composite(
+			ByteBufCodecs.optional(BlockPos.STREAM_CODEC), OpenLoadoutPayload::tripod,
+			OpenLoadoutPayload::new);
 
-	private OpenLoadoutPayload() {
-	}
-
-	public static void write(FriendlyByteBuf buf, Optional<BlockPos> tripod) {
-		buf.writeBoolean(tripod.isPresent());
-		tripod.ifPresent(buf::writeBlockPos);
-	}
-
-	public static Optional<BlockPos> read(FriendlyByteBuf buf) {
-		return buf.readBoolean() ? Optional.of(buf.readBlockPos()) : Optional.empty();
+	@Override
+	public Type<OpenLoadoutPayload> type() {
+		return TYPE;
 	}
 }

@@ -66,7 +66,7 @@ public class CameraBodyMenu extends AbstractContainerMenu {
 		addSlot(gearSlot(LENS_SLOT, PhotoMode::isLens));
 		addSlot(gearSlot(FILTER_SLOT, PhotoMode::isFilter));
 
-		// 1.20.4 has no addStandardInventorySlots() helper yet — the classic 3x9 + hotbar loop.
+		// 1.21.1 has no addStandardInventorySlots() helper yet — the classic 3x9 + hotbar loop.
 		int x = 8;
 		int y = 84;
 		for (int row = 0; row < 3; row++) {
