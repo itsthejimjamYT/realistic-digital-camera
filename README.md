@@ -3,9 +3,8 @@
 A Fabric mod that adds a **fully functional digital camera** to Minecraft.
 
 > **This branch (`26.3`) targets Minecraft 26.3.** Playing a different version? Switch to
-> the [`main-26.2`](../../tree/main-26.2) or [`1.20.4`](../../tree/1.20.4) branch instead —
-> the install steps below are branch-specific. (Versions before 26.2, such as 1.20.4, need
-> an Iris shader pack for depth of field.)
+> the [`main-26.2`](../../tree/main-26.2), [`1.21.1`](../../tree/1.21.1) or
+> [`1.20.4`](../../tree/1.20.4) branch instead — the install steps below are branch-specific.
 
 Pick an exposure mode, dial in aperture / shutter / ISO (or let the
 camera do it), fit a lens and a filter, choose your focus point, and take a shot that
