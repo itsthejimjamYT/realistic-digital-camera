@@ -64,6 +64,9 @@ public final class PhotoCapture {
 	private static int warmupLeft = 0;
 	private static int stacked = 0;
 	private static int lastStackFrames = 0;
+	/** Long edge this capture's long exposure renders at — fixed at the shutter press
+	 *  (see {@link #longExposureEdge}), since the render size must not change mid-capture. */
+	private static int longExpEdge = Integer.MAX_VALUE;
 	private static volatile boolean readbackInFlight = false;
 	private static final ExposureStack STACK = new ExposureStack();
 	/** The developed long-exposure stack, uploaded once and copied over {@code minecraft:main}
@@ -118,6 +121,9 @@ public final class PhotoCapture {
 		} else {
 			bracketEvs = null;
 			longExpMode = LongExposure.modeFor(sec, PhotoModeSession.motionBlurTriggerSeconds());
+			if (longExpMode != LongExposure.OFF) {
+				longExpEdge = longExposureEdge(Framing.outputWidth(), Framing.outputHeight());
+			}
 		}
 		bracketBiasEv = 0.0f;
 		subFrames = LongExposure.subFrames(sec);
@@ -280,14 +286,15 @@ public final class PhotoCapture {
 
 	private static int[] renderSize() {
 		// Long exposure accumulates full frames on the CPU, so it renders at output size
-		// (no supersample) and caps the long edge to keep memory sane. Bracket frames are
-		// each saved independently, so they get the normal full-quality path.
+		// (no supersample) — stepped down only if the heap can't hold the stack (see
+		// longExposureEdge). Bracket frames are each saved independently, so they get the
+		// normal full-quality path.
 		if (longExpMode != LongExposure.OFF) {
 			int w = Framing.outputWidth();
 			int h = Framing.outputHeight();
 			int edge = Math.max(w, h);
-			if (edge > LongExposure.MAX_EDGE) {
-				double s = (double) LongExposure.MAX_EDGE / edge;
+			if (edge > longExpEdge) {
+				double s = (double) longExpEdge / edge;
 				w = (int) Math.round(w * s) & ~1;
 				h = (int) Math.round(h * s) & ~1;
 			}
@@ -593,6 +600,31 @@ public final class PhotoCapture {
 		}
 	}
 
+	/** Long edge for a long exposure of {@code w x h}: the full size when the Java heap has
+	 *  room for the stack ({@link ExposureStack#BYTES_PER_PIXEL} per pixel, plus headroom for
+	 *  the game), otherwise stepped down by quarters to no less than
+	 *  {@link LongExposure#MIN_EDGE}. */
+	private static int longExposureEdge(int w, int h) {
+		Runtime rt = Runtime.getRuntime();
+		long free = rt.maxMemory() - (rt.totalMemory() - rt.freeMemory());
+		long budget = free - 512L * 1024 * 1024;
+		int full = Math.max(w, h);
+		int edge = full;
+		while (edge > LongExposure.MIN_EDGE) {
+			double s = (double) edge / full;
+			long pixels = (long) (w * s) * (long) (h * s);
+			if (pixels * ExposureStack.BYTES_PER_PIXEL <= budget) {
+				break;
+			}
+			edge = Math.max(LongExposure.MIN_EDGE, edge * 3 / 4);
+		}
+		if (edge < full) {
+			PhotoMode.LOGGER.warn("[Photo Mode] long exposure reduced to {}px (free heap {} MB)",
+					edge, free / (1024 * 1024));
+		}
+		return edge;
+	}
+
 	/** Box-filter downscale by an integer factor (supersampling). Factor 1 returns the
 	 *  input image itself, unclosed; otherwise the input is closed. */
 	private static NativeImage downscale(NativeImage src, int factor) {
@@ -649,11 +681,11 @@ public final class PhotoCapture {
 		int outW = rs[0] / ss;
 		int outH = rs[1] / ss;
 		boolean wasLong = longExpMode != LongExposure.OFF;
-		// Long exposures render at most LongExposure.MAX_EDGE on the long side (CPU stacking);
-		// say so when that shrank the chosen resolution, rather than just printing a smaller size.
-		boolean capped = wasLong && Math.max(Framing.outputWidth(), Framing.outputHeight()) > LongExposure.MAX_EDGE;
+		// Say so when a low heap made the long exposure render smaller than the chosen
+		// resolution, rather than just printing a smaller size.
+		boolean capped = wasLong && Math.max(Framing.outputWidth(), Framing.outputHeight()) > longExpEdge;
 		String modeNote = wasLong ? "  (" + LongExposure.OPTIONS[longExpMode] + " · " + lastStackFrames + " frames"
-				+ (capped ? " · long exposure max " + LongExposure.MAX_EDGE + "px" : "") + ")" : "";
+				+ (capped ? " · reduced to " + longExpEdge + "px, not enough memory" : "") + ")" : "";
 
 		PngWriter.Exif exif = new PngWriter.Exif(PhotoModeSession.getShutterSeconds(), PhotoModeSession.getAperture(),
 				PhotoModeSession.getIso(), PhotoModeSession.getExposureComp(), System.currentTimeMillis());
