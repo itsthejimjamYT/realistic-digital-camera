@@ -6,9 +6,15 @@
     "III"
   ],
   "key": {
-    "G": "minecraft:glass",
-    "C": "minecraft:crafting_table",
-    "I": "minecraft:iron_ingot"
+    "G": {
+      "item": "minecraft:glass"
+    },
+    "C": {
+      "item": "minecraft:crafting_table"
+    },
+    "I": {
+      "item": "minecraft:iron_ingot"
+    }
   },
   "result": {
     "item": "realcamera:camera_workbench",

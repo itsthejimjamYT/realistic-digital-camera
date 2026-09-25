@@ -8,9 +8,15 @@
     " NNNNN "
   ],
   "key": {
-    "N": "minecraft:iron_nugget",
-    "P": "minecraft:glass_pane",
-    "X": "minecraft:black_dye"
+    "N": {
+      "item": "minecraft:iron_nugget"
+    },
+    "P": {
+      "item": "minecraft:glass_pane"
+    },
+    "X": {
+      "item": "minecraft:black_dye"
+    }
   },
   "result": "realcamera:filter_nd8"
 }

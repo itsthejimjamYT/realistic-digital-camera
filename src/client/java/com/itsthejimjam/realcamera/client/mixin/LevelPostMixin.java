@@ -10,11 +10,12 @@ import com.itsthejimjam.realcamera.client.FilmParams;
 import com.itsthejimjam.realcamera.client.PhotoCapture;
 import com.itsthejimjam.realcamera.client.PhotoModeSession;
 import com.itsthejimjam.realcamera.client.ShaderPackCompat;
+import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.vertex.PoseStack;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.EffectInstance;
 import net.minecraft.client.renderer.GameRenderer;
-import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.client.renderer.PostChain;
 import net.minecraft.client.renderer.PostPass;
 import net.minecraft.resources.ResourceLocation;
@@ -25,27 +26,26 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * Runs photo mode's DoF/film-grade effect chain, injected right after
- * {@code LevelRenderer.doEntityOutline()} (after the level has rendered, before the GUI) —
- * the 1.20.4 analogue of the seam 26.2 uses.
+ * Runs photo mode's DoF / film-grade effect chain at the right point of the frame for
+ * whichever depth source is live.
  *
- * <p>1.20.4 has no {@code ShaderManager} chain cache — two {@link PostChain}s (a
- * vanilla-depth one and a shader-pack-depth one) are constructed once here, lazily, and
- * kept for the life of the game, resized on demand.
+ * <p><b>No shader pack:</b> right after {@code LevelRenderer.renderLevel} returns, inside
+ * {@code GameRenderer.renderLevel} — before it clears the depth buffer to draw the
+ * first-person hand ({@code RenderSystem.clear(GL_DEPTH_BUFFER_BIT)} under the "hand"
+ * profiler section). That's the last moment {@code minecraft:main:depth} still holds the
+ * scene. This chain used to run later, from {@code doEntityOutline}, and so only ever saw
+ * the cleared depth (a flat 1.0 — every pixel "sky", zero blur), which is why depth of
+ * field used to need a shader pack on this version. Same seam 26.2 uses ("before the
+ * always-on-top pass clears the depth buffer").
  *
- * <p>Which one runs each frame follows whether {@link ShaderPackCompat#sceneDepthTextureId()}
- * hands back a usable depth texture — NOT {@link ShaderPackCompat#shaderPackActive()} ("a
- * pack is loaded"). Iris's reflected depth is the only depth source that actually works on
- * this version: <b>depth-of-field on MC &lt; 26.2 requires a shader pack (Iris).</b> With
- * no shader pack the vanilla {@code minecraft:main:depth} auxtarget reads a flat,
- * never-populated 1.0 for reasons that resisted a very long investigation (GL depth
- * state, framebuffer binding, the projection matrix inputs, and vanilla's own terrain
- * shader all check out as correct, yet the depth texture stays uniformly at the clear
- * value once photo mode is active — while colour renders perfectly). When that happens the
- * vanilla chain still runs, but {@code realcamera_dof.fsh} sees every pixel as "sky"
- * (raw depth 1.0), computes a zero circle-of-confusion, and passes the sharp frame
- * straight through — so exposure / white balance / film grade / grain (all in the blit
- * pass) still work, there's just no blur.
+ * <p><b>Shader pack (Iris):</b> after {@code doEntityOutline}, once the pack has
+ * composited — anything written earlier would be overwritten by the pack's final pass.
+ * Depth comes from the pack's own depth texture (see {@link ShaderPackCompat}).
+ *
+ * <p>Exactly one of the two runs per frame: the pick is whether the pack hands back a
+ * usable depth texture this frame. 1.20.4 has no {@code ShaderManager} chain cache — the two
+ * {@link PostChain}s are constructed here lazily, kept for the life of the game, and
+ * resized on demand.
  */
 @Mixin(GameRenderer.class)
 public class LevelPostMixin {
@@ -54,10 +54,48 @@ public class LevelPostMixin {
 	private static boolean realcamera$vanillaLoadFailed;
 	private static PostChain realcamera$chainShaderpack;
 	private static boolean realcamera$shaderpackLoadFailed;
-	private static int realcamera$lastW = -1;
-	private static int realcamera$lastH = -1;
-	private static boolean realcamera$lastWasShaderpack;
-	private static boolean realcamera$noDepthLogged;
+	private static int realcamera$vanillaW = -1;
+	private static int realcamera$vanillaH = -1;
+	private static int realcamera$shaderpackW = -1;
+	private static int realcamera$shaderpackH = -1;
+	private static boolean realcamera$vanillaLogged;
+
+	@Inject(
+			method = "renderLevel(FJLcom/mojang/blaze3d/vertex/PoseStack;)V",
+			at = @At(
+					value = "INVOKE_STRING",
+					target = "Lnet/minecraft/util/profiling/ProfilerFiller;popPush(Ljava/lang/String;)V",
+					args = "ldc=hand"))
+	private void realcamera$vanillaDepthChain(float partialTick, long finishTimeNano, PoseStack pose, CallbackInfo ci) {
+		if (!PhotoModeSession.isActive() || ShaderPackCompat.sceneDepthTextureId() >= 0) {
+			return;
+		}
+		Minecraft mc = Minecraft.getInstance();
+		PostChain chain = realcamera$getVanillaChain(mc);
+		if (chain == null) {
+			return;
+		}
+		if (!realcamera$vanillaLogged) {
+			realcamera$vanillaLogged = true;
+			PhotoMode.LOGGER.info("[Photo Mode] vanilla-depth effect chain running");
+		}
+		int w = mc.getMainRenderTarget().width;
+		int h = mc.getMainRenderTarget().height;
+		// resize() reallocates every intermediate render target — only when the framebuffer
+		// size actually changed (it's expensive at a large capture resolution).
+		if (w != realcamera$vanillaW || h != realcamera$vanillaH) {
+			chain.resize(w, h);
+			realcamera$vanillaW = w;
+			realcamera$vanillaH = h;
+		}
+		realcamera$applyParams(chain);
+		realcamera$process(chain, partialTick);
+		// We're mid-level-render here (the hand pass is next): restore the state it expects.
+		RenderSystem.enableDepthTest();
+		if (w == PhotoCapture.overrideWidth() && h == PhotoCapture.overrideHeight()) {
+			PhotoCapture.markChainReady();
+		}
+	}
 
 	@Inject(
 			method = "render(FJZ)V",
@@ -65,41 +103,50 @@ public class LevelPostMixin {
 					value = "INVOKE",
 					target = "Lnet/minecraft/client/renderer/LevelRenderer;doEntityOutline()V",
 					shift = At.Shift.AFTER))
-	private void realcamera$addEffectChain(float partialTick, long finishTimeNano, boolean tick, CallbackInfo ci) {
+	private void realcamera$shaderPackChain(float partialTick, long finishTimeNano, boolean tick, CallbackInfo ci) {
 		if (!PhotoModeSession.isActive()) {
 			return;
 		}
-		Minecraft mc = Minecraft.getInstance();
-		// Iris's real depth first, regardless of whether a custom pack is loaded — its
-		// reflected depth texture is the only one that carries usable data on this version.
 		int irisDepthTexId = ShaderPackCompat.sceneDepthTextureId();
-		boolean useShaderpack = irisDepthTexId >= 0;
-		PostChain chain = useShaderpack ? realcamera$getShaderpackChain(mc) : realcamera$getVanillaChain(mc);
+		if (irisDepthTexId < 0) {
+			return;
+		}
+		Minecraft mc = Minecraft.getInstance();
+		PostChain chain = realcamera$getShaderpackChain(mc);
 		if (chain == null) {
 			return;
 		}
-
-		if (!useShaderpack && !realcamera$noDepthLogged) {
-			realcamera$noDepthLogged = true;
-			PhotoMode.LOGGER.info("[Photo Mode] no shader-pack depth available — depth-of-field "
-					+ "is inactive (exposure / white balance / film grade still apply). "
-					+ "DoF on MC < 26.2 needs a shader pack.");
-		}
-
 		int w = mc.getMainRenderTarget().width;
 		int h = mc.getMainRenderTarget().height;
-		// resize() reallocates every intermediate render target — skip it when the
-		// framebuffer size hasn't actually changed (it's called every frame otherwise,
-		// which is needlessly expensive at a large capture resolution). A switch between
-		// the vanilla/shader-pack chain also needs a resize — each chain owns its own set
-		// of intermediate targets, sized independently.
-		if (w != realcamera$lastW || h != realcamera$lastH || useShaderpack != realcamera$lastWasShaderpack) {
+		if (w != realcamera$shaderpackW || h != realcamera$shaderpackH) {
 			chain.resize(w, h);
-			realcamera$lastW = w;
-			realcamera$lastH = h;
-			realcamera$lastWasShaderpack = useShaderpack;
+			realcamera$shaderpackW = w;
+			realcamera$shaderpackH = h;
 		}
+		realcamera$applyParams(chain);
 
+		// Iris manages its own depth textures separately from vanilla's main depth buffer —
+		// feed the DoF pass the pack's real depth directly, bypassing the JSON auxtarget wiring.
+		int[] depthSize = ShaderPackCompat.sceneDepthSize();
+		List<PostPass> passes = ((PostChainAccessor) chain).realcamera$passes();
+		if (passes != null && passes.size() >= 3) {
+			EffectInstance dof = passes.get(2).getEffect();
+			if (dof != null) {
+				dof.setSampler("MainDepthSampler", () -> irisDepthTexId);
+			}
+		}
+		realcamera$process(chain, partialTick);
+
+		boolean atCaptureSize = w == PhotoCapture.overrideWidth() && h == PhotoCapture.overrideHeight();
+		// Also wait for Iris's own render targets to have caught up to the capture resolution —
+		// otherwise DoF briefly samples a stale-sized depth texture right after a capture resize.
+		boolean depthMatches = depthSize != null && depthSize[0] == w && depthSize[1] == h;
+		if (atCaptureSize && depthMatches) {
+			PhotoCapture.markChainReady();
+		}
+	}
+
+	private static void realcamera$applyParams(PostChain chain) {
 		DofParams.apply(chain, PhotoModeSession.getAperture(),
 				PhotoModeSession.getFocusU(), PhotoModeSession.getFocusV());
 		ExposureParams.apply(chain, PhotoModeSession.getAperture(), PhotoModeSession.getShutterSeconds(),
@@ -108,32 +155,15 @@ public class LevelPostMixin {
 		FilmParams.apply(chain, PhotoModeSession.getRecipeIndex(), PhotoModeSession.getRecipeStrength(),
 				PhotoModeSession.filterPolar(), PhotoModeSession.filterMist());
 		AidParams.apply(chain);
+	}
 
-		int[] depthSize = null;
-		if (useShaderpack) {
-			// Iris manages its own depth textures separately from vanilla's main depth
-			// buffer — feed the DoF pass the pack's real depth directly, bypassing the
-			// JSON auxtarget wiring.
-			depthSize = ShaderPackCompat.sceneDepthSize();
-			List<PostPass> passes = ((PostChainAccessor) chain).realcamera$passes();
-			if (passes != null && passes.size() >= 3) {
-				EffectInstance dof = passes.get(2).getEffect();
-				if (dof != null) {
-					dof.setSampler("MainDepthSampler", () -> irisDepthTexId);
-				}
-			}
-		}
-
+	/** Same state vanilla sets up around its own post effect, and main re-bound afterwards. */
+	private static void realcamera$process(PostChain chain, float partialTick) {
+		RenderSystem.disableBlend();
+		RenderSystem.disableDepthTest();
+		RenderSystem.resetTextureMatrix();
 		chain.process(partialTick);
-
-		boolean atCaptureSize = w == PhotoCapture.overrideWidth() && h == PhotoCapture.overrideHeight();
-		// For the shader-pack path, also wait for Iris's own render targets to have caught
-		// up to the capture resolution — otherwise DoF briefly samples a stale-sized depth
-		// texture (mismatched aspect against the new frame) right after a capture resize.
-		boolean depthMatches = !useShaderpack || (depthSize != null && depthSize[0] == w && depthSize[1] == h);
-		if (atCaptureSize && depthMatches) {
-			PhotoCapture.markChainReady();
-		}
+		Minecraft.getInstance().getMainRenderTarget().bindWrite(true);
 	}
 
 	private static PostChain realcamera$getVanillaChain(Minecraft mc) {

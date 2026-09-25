@@ -8,9 +8,15 @@
     " NNNNN "
   ],
   "key": {
-    "N": "minecraft:iron_nugget",
-    "P": "minecraft:glass_pane",
-    "L": "minecraft:lapis_lazuli"
+    "N": {
+      "item": "minecraft:iron_nugget"
+    },
+    "P": {
+      "item": "minecraft:glass_pane"
+    },
+    "L": {
+      "item": "minecraft:lapis_lazuli"
+    }
   },
   "result": "realcamera:filter_polarizer"
 }
