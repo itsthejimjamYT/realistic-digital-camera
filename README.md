@@ -110,8 +110,8 @@ etc.) — the mod does **not** merge them. Combine them yourself in an HDR / pho
 ## Install
 
 1. Install [Fabric Loader](https://fabricmc.net/use/installer/) for Minecraft 1.20.4.
-2. There's no packaged Release for 1.20.4 yet — build the jar yourself from this branch
-   (see **Building** below).
+2. Download the mod `.jar` from the [Releases](../../releases) page — pick the build
+   marked **1.20.4** (e.g. `realcamera-1.0.1+1.20.4.jar`).
 3. Drop it, along with [Fabric API](https://modrinth.com/mod/fabric-api) for 1.20.4, into
    your `mods/` folder.
 4. For depth of field, also install [Iris](https://modrinth.com/mod/iris) and select a
