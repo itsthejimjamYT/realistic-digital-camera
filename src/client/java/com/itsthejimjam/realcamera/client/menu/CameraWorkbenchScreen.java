@@ -28,6 +28,14 @@ public class CameraWorkbenchScreen extends AbstractContainerScreen<WorkbenchMenu
 	}
 
 	@Override
+	public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
+		super.render(g, mouseX, mouseY, partialTick);
+		// Unlike 26.x, this version's AbstractContainerScreen.render() doesn't draw the
+		// hovered item's tooltip (name, lore) — every container screen has to ask for it.
+		this.renderTooltip(g, mouseX, mouseY);
+	}
+
+	@Override
 	protected void renderBg(GuiGraphics g, float partialTick, int mouseX, int mouseY) {
 		int x = this.leftPos;
 		int y = this.topPos;
