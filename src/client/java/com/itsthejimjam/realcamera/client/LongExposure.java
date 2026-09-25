@@ -17,8 +17,9 @@ public final class LongExposure {
 
 	/** Below this shutter time the world barely moves, so skip the multi-frame path. */
 	private static final double MIN_SHUTTER_SECONDS = 1.0 / 40.0;
-	/** Long edge cap for a long-exposure render (CPU accumulation is memory + readback heavy). */
-	public static final int MAX_EDGE = 4096;
+	/** Smallest long edge a long exposure is ever stepped down to when the Java heap can't
+	 *  hold a full-resolution stack (see {@code PhotoCapture.longExposureEdge}). */
+	public static final int MIN_EDGE = 2048;
 
 	private LongExposure() {
 	}

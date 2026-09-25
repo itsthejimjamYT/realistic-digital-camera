@@ -62,6 +62,9 @@ public final class PhotoCapture {
 	private static int warmupLeft = 0;
 	private static int stacked = 0;
 	private static int lastStackFrames = 0;
+	/** Long edge this capture's long exposure renders at — fixed at the shutter press
+	 *  (see {@link #longExposureEdge}), since the render size must not change mid-capture. */
+	private static int longExpEdge = Integer.MAX_VALUE;
 	private static final ExposureStack STACK = new ExposureStack();
 
 	// --- exposure bracketing ---
@@ -101,6 +104,9 @@ public final class PhotoCapture {
 		} else {
 			bracketEvs = null;
 			longExpMode = LongExposure.modeFor(sec, PhotoModeSession.motionBlurTriggerSeconds());
+			if (longExpMode != LongExposure.OFF) {
+				longExpEdge = longExposureEdge(Framing.outputWidth(), Framing.outputHeight());
+			}
 		}
 		bracketBiasEv = 0.0f;
 		subFrames = LongExposure.subFrames(sec);
@@ -169,14 +175,15 @@ public final class PhotoCapture {
 
 	private static int[] renderSize() {
 		// Long exposure accumulates full frames on the CPU, so it renders at output size
-		// (no supersample) and caps the long edge to keep memory sane. Bracket frames are
-		// each saved independently, so they get the normal full-quality path.
+		// (no supersample) — stepped down only if the heap can't hold the stack (see
+		// longExposureEdge). Bracket frames are each saved independently, so they get the
+		// normal full-quality path.
 		if (longExpMode != LongExposure.OFF) {
 			int w = Framing.outputWidth();
 			int h = Framing.outputHeight();
 			int edge = Math.max(w, h);
-			if (edge > LongExposure.MAX_EDGE) {
-				double s = (double) LongExposure.MAX_EDGE / edge;
+			if (edge > longExpEdge) {
+				double s = (double) longExpEdge / edge;
 				w = (int) Math.round(w * s) & ~1;
 				h = (int) Math.round(h * s) & ~1;
 			}
@@ -400,10 +407,9 @@ public final class PhotoCapture {
 			// STACK.finish() has to run here, not on the io pool: it resets the shared
 			// STACK singleton's fields as its last step, and finishCapture() below (also
 			// on this thread) touches those same fields — running finish() on a
-			// background thread would race the two. It's bounded to
-			// LongExposure.MAX_EDGE^2 pixels (~16M worst case), a one-time cost per long
-			// exposure, not per frame — smaller and rarer than the downscale stall this
-			// was modeled on, so left synchronous.
+			// background thread would race the two. It's one pass over the output
+			// resolution, a one-time cost per long exposure, not per frame — smaller and
+			// rarer than the downscale stall this was modeled on, so left synchronous.
 			lastStackFrames = STACK.frames();
 			NativeImage stackedImage = STACK.finish();
 			Minecraft mc = Minecraft.getInstance();
@@ -411,12 +417,15 @@ public final class PhotoCapture {
 			File file = new File(dir, Util.getFilenameFormattedDateTime() + ".png");
 			int w = stackedImage.getWidth();
 			int h = stackedImage.getHeight();
+			// Built now: finishCapture() below resets longExpMode before the save finishes.
+			boolean capped = Math.max(Framing.outputWidth(), Framing.outputHeight()) > longExpEdge;
+			String note = "  (" + LongExposure.OPTIONS[longExpMode] + " · " + lastStackFrames + " frames"
+					+ (capped ? " · reduced to " + longExpEdge + "px, not enough memory" : "") + ")";
 			Util.ioPool().execute(() -> {
 				try (stackedImage) {
 					dir.mkdirs();
 					stackedImage.writeToFile(file);
-					mc.execute(() -> announce(mc, "Saved  " + file.getName() + "   " + w + "×" + h
-							+ "  (" + LongExposure.OPTIONS[longExpMode] + " · " + lastStackFrames + " frames)"));
+					mc.execute(() -> announce(mc, "Saved  " + file.getName() + "   " + w + "×" + h + note));
 				} catch (Exception e) {
 					PhotoMode.LOGGER.error("[Photo Mode] failed to save long exposure", e);
 					mc.execute(() -> announce(mc, "Photo save failed — see log"));
@@ -462,6 +471,31 @@ public final class PhotoCapture {
 			src.close();
 		}
 		return out;
+	}
+
+	/** Long edge for a long exposure of {@code w x h}: the full size when the Java heap has
+	 *  room for the stack ({@link ExposureStack#BYTES_PER_PIXEL} per pixel, plus headroom for
+	 *  the game), otherwise stepped down by quarters to no less than
+	 *  {@link LongExposure#MIN_EDGE}. */
+	private static int longExposureEdge(int w, int h) {
+		Runtime rt = Runtime.getRuntime();
+		long free = rt.maxMemory() - (rt.totalMemory() - rt.freeMemory());
+		long budget = free - 512L * 1024 * 1024;
+		int full = Math.max(w, h);
+		int edge = full;
+		while (edge > LongExposure.MIN_EDGE) {
+			double s = (double) edge / full;
+			long pixels = (long) (w * s) * (long) (h * s);
+			if (pixels * ExposureStack.BYTES_PER_PIXEL <= budget) {
+				break;
+			}
+			edge = Math.max(LongExposure.MIN_EDGE, edge * 3 / 4);
+		}
+		if (edge < full) {
+			PhotoMode.LOGGER.warn("[Photo Mode] long exposure reduced to {}px (free heap {} MB)",
+					edge, free / (1024 * 1024));
+		}
+		return edge;
 	}
 
 	private static void grabIfReady(RenderTarget mainTarget) {

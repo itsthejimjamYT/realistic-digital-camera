@@ -19,14 +19,21 @@ public final class ExposureStack {
 	private int height;
 	private int frames;
 
-	/** Running per-channel sum across the folded sub-frames. */
-	private int[] sum;
+	/** Most sub-frames a {@code char} sum can hold without overflowing (257 × 255 = 65535). */
+	public static final int MAX_FRAMES = 257;
+	/** Java-heap bytes per pixel: 3 channels × a 2-byte sum. */
+	public static final int BYTES_PER_PIXEL = 6;
+
+	/** Running per-channel sum across the folded sub-frames — unsigned 16-bit, so a stack
+	 *  fits at the photo's full resolution (8K included) instead of forcing long exposures
+	 *  down to a small cap. */
+	private char[] sum;
 
 	public void begin(int width, int height) {
 		this.width = width;
 		this.height = height;
 		this.frames = 0;
-		this.sum = new int[width * height * 3];
+		this.sum = new char[width * height * 3];
 	}
 
 	public boolean active() {
@@ -39,16 +46,16 @@ public final class ExposureStack {
 
 	/** Fold one sub-frame in. The image must match the stack's dimensions. */
 	public void add(NativeImage image) {
-		if (!active() || image.getWidth() != width || image.getHeight() != height) {
+		if (!active() || image.getWidth() != width || image.getHeight() != height || frames >= MAX_FRAMES) {
 			return;
 		}
 		int i = 0;
 		for (int y = 0; y < height; y++) {
 			for (int x = 0; x < width; x++) {
 				int p = image.getPixelRGBA(x, y);
-				sum[i] += (p >> 16) & 0xFF;
-				sum[i + 1] += (p >> 8) & 0xFF;
-				sum[i + 2] += p & 0xFF;
+				sum[i] += (char) ((p >> 16) & 0xFF);
+				sum[i + 1] += (char) ((p >> 8) & 0xFF);
+				sum[i + 2] += (char) (p & 0xFF);
 				i += 3;
 			}
 		}

@@ -2,15 +2,9 @@
 
 A Fabric mod that adds a **fully functional digital camera** to Minecraft.
 
-> **This branch (`1.20.4`) targets Minecraft 1.20.4.** Playing 26.2 or 26.3? Switch to the
-> [`main-26.2`](../../tree/main-26.2) or [`26.3`](../../tree/26.3) branch instead — the
-> install steps below are branch-specific.
->
-> **Depth of field needs a shader pack on this version.** On Minecraft versions before
-> 26.2 the mod can only read scene depth through [Iris](https://modrinth.com/mod/iris), so
-> the real depth-of-field blur works when Iris is running a shader pack. Without one,
-> everything else still works (exposure, white balance, film looks, grain, long exposure,
-> bracketing) — there's just no blur.
+> **This branch (`1.20.4`) targets Minecraft 1.20.4.** Playing a different version? Switch to
+> the [`main-26.2`](../../tree/main-26.2), [`26.3`](../../tree/26.3) or
+> [`1.21.1`](../../tree/1.21.1) branch instead — the install steps below are branch-specific.
 
 Pick an exposure mode, dial in aperture / shutter / ISO (or let the
 camera do it), fit a lens and a filter, choose your focus point, and take a shot that
@@ -114,9 +108,8 @@ etc.) — the mod does **not** merge them. Combine them yourself in an HDR / pho
    marked **1.20.4** (e.g. `realcamera-1.0.1+1.20.4.jar`).
 3. Drop it, along with [Fabric API](https://modrinth.com/mod/fabric-api) for 1.20.4, into
    your `mods/` folder.
-4. For depth of field, also install [Iris](https://modrinth.com/mod/iris) and select a
-   shader pack (see the note at the top). [Sodium](https://modrinth.com/mod/sodium) is
-   optional.
+4. Optional: [Iris](https://modrinth.com/mod/iris) with a shader pack, and
+   [Sodium](https://modrinth.com/mod/sodium). Depth of field works with or without one.
 
 ## Controls
 
