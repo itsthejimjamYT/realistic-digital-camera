@@ -11,6 +11,12 @@ import net.minecraft.util.Mth;
  * recover star trails — see {@link #finish()}); {@link #finish()} produces the stacked
  * image, which is written back into {@code minecraft:main} for the DoF / grade / grain
  * chain to process.
+ *
+ * <p>Stored compactly so a stack fits at the photo's full resolution (8K included) instead
+ * of forcing long exposures down to a small cap: the sum as {@code char} (unsigned 16-bit —
+ * {@value #MAX_FRAMES} frames × 255 still fits), the peak and the star-trail buffers as
+ * {@code byte}. That's {@value #BYTES_PER_PIXEL} bytes per pixel at the worst point of
+ * {@link #finish()}, versus 36 with plain {@code int} arrays.
  */
 public final class ExposureStack {
 
@@ -26,24 +32,30 @@ public final class ExposureStack {
 	 *  ramps from 0 to fully saturated. */
 	private static final float STAR_RAMP = 150.0f;
 
+	/** Most sub-frames a {@code char} sum can hold without overflowing (257 × 255 = 65535). */
+	public static final int MAX_FRAMES = 257;
+	/** Java-heap bytes per pixel at peak: 3 channels × (2 sum + 1 peak + 1 star signal +
+	 *  1 dilate scratch). */
+	public static final int BYTES_PER_PIXEL = 15;
+
 	private int width;
 	private int height;
 	private int frames;
 
-	/** Running per-channel sum across the folded sub-frames. */
-	private int[] sum;
-	/** Running per-channel peak across the folded sub-frames — a star trail (or any
-	 *  small bright thing sweeping through a pixel in only a few sub-frames) shows up
-	 *  here at close to full brightness even though the plain average dims it by
+	/** Running per-channel sum across the folded sub-frames (unsigned 16-bit). */
+	private char[] sum;
+	/** Running per-channel peak across the folded sub-frames (unsigned byte) — a star
+	 *  trail (or any small bright thing sweeping through a pixel in only a few sub-frames)
+	 *  shows up here at close to full brightness even though the plain average dims it by
 	 *  roughly the sub-frame count. */
-	private int[] peak;
+	private byte[] peak;
 
 	public void begin(int width, int height) {
 		this.width = width;
 		this.height = height;
 		this.frames = 0;
-		this.sum = new int[width * height * 3];
-		this.peak = new int[width * height * 3];
+		this.sum = new char[width * height * 3];
+		this.peak = new byte[width * height * 3];
 	}
 
 	public boolean active() {
@@ -56,26 +68,27 @@ public final class ExposureStack {
 
 	/** Fold one sub-frame in. The image must match the stack's dimensions. */
 	public void add(NativeImage image) {
-		if (!active() || image.getWidth() != width || image.getHeight() != height) {
+		if (!active() || image.getWidth() != width || image.getHeight() != height || frames >= MAX_FRAMES) {
 			return;
 		}
 		int i = 0;
 		for (int y = 0; y < height; y++) {
 			for (int x = 0; x < width; x++) {
 				int p = image.getPixel(x, y);
-				int r = (p >> 16) & 0xFF;
-				int g = (p >> 8) & 0xFF;
-				int b = p & 0xFF;
-				sum[i] += r;
-				sum[i + 1] += g;
-				sum[i + 2] += b;
-				if (r > peak[i]) peak[i] = r;
-				if (g > peak[i + 1]) peak[i + 1] = g;
-				if (b > peak[i + 2]) peak[i + 2] = b;
+				fold(i, (p >> 16) & 0xFF);
+				fold(i + 1, (p >> 8) & 0xFF);
+				fold(i + 2, p & 0xFF);
 				i += 3;
 			}
 		}
 		frames++;
+	}
+
+	private void fold(int i, int v) {
+		sum[i] += (char) v;
+		if (v > (peak[i] & 0xFF)) {
+			peak[i] = (byte) v;
+		}
 	}
 
 	/**
@@ -113,18 +126,22 @@ public final class ExposureStack {
 		// instead means only real streaking highlights can ever propagate; a static
 		// highlight contributes nothing to the spread no matter how bright it is, so
 		// nothing blooms into the ground.
-		int[] starSignal = null;
+		byte[] starSignal = null;
 		if (strength > 0.0f) {
-			starSignal = new int[sum.length];
+			starSignal = new byte[sum.length];
 			for (int i = 0; i < sum.length; i++) {
 				int avg = sum[i] / denom;
-				if (peak[i] - avg > STAR_THRESHOLD) {
-					starSignal[i] = peak[i];
+				int pk = peak[i] & 0xFF;
+				if (pk - avg > STAR_THRESHOLD) {
+					starSignal[i] = (byte) pk;
 				}
 			}
+			// The peak buffer isn't needed past this point — let it go before the dilate
+			// allocates its scratch, so the two never coexist.
+			peak = null;
 			int radius = Mth.clamp(Math.round(strength * 2.0f * Math.max(width, height) / 2048.0f), 0, 4);
 			if (radius > 0) {
-				starSignal = dilate(starSignal, radius);
+				dilate(starSignal, radius);
 			}
 		}
 
@@ -143,12 +160,12 @@ public final class ExposureStack {
 		return out;
 	}
 
-	/** Separable max-filter (horizontal pass then vertical) over a 3-channel-interleaved
-	 *  buffer — spreads each channel's value out to the brightest value within
-	 *  {@code radius} pixels, cheaply (two 1D passes instead of one 2D window). */
-	private int[] dilate(int[] src, int radius) {
-		int[] tmp = new int[src.length];
-		int[] dst = new int[src.length];
+	/** In-place separable max-filter (horizontal pass into a scratch buffer, vertical pass
+	 *  back into {@code buf}) over a 3-channel-interleaved unsigned-byte buffer — spreads
+	 *  each channel to the brightest value within {@code radius} pixels, cheaply (two 1D
+	 *  passes instead of one 2D window). */
+	private void dilate(byte[] buf, int radius) {
+		byte[] tmp = new byte[buf.length];
 		for (int y = 0; y < height; y++) {
 			int rowBase = y * width * 3;
 			for (int x = 0; x < width; x++) {
@@ -157,14 +174,14 @@ public final class ExposureStack {
 				int mr = 0, mg = 0, mb = 0;
 				for (int xx = x0; xx <= x1; xx++) {
 					int j = rowBase + xx * 3;
-					if (src[j] > mr) mr = src[j];
-					if (src[j + 1] > mg) mg = src[j + 1];
-					if (src[j + 2] > mb) mb = src[j + 2];
+					mr = Math.max(mr, buf[j] & 0xFF);
+					mg = Math.max(mg, buf[j + 1] & 0xFF);
+					mb = Math.max(mb, buf[j + 2] & 0xFF);
 				}
 				int o = rowBase + x * 3;
-				tmp[o] = mr;
-				tmp[o + 1] = mg;
-				tmp[o + 2] = mb;
+				tmp[o] = (byte) mr;
+				tmp[o + 1] = (byte) mg;
+				tmp[o + 2] = (byte) mb;
 			}
 		}
 		for (int x = 0; x < width; x++) {
@@ -175,28 +192,27 @@ public final class ExposureStack {
 				int mr = 0, mg = 0, mb = 0;
 				for (int yy = yy0; yy <= yy1; yy++) {
 					int j = yy * width * 3 + y0col;
-					if (tmp[j] > mr) mr = tmp[j];
-					if (tmp[j + 1] > mg) mg = tmp[j + 1];
-					if (tmp[j + 2] > mb) mb = tmp[j + 2];
+					mr = Math.max(mr, tmp[j] & 0xFF);
+					mg = Math.max(mg, tmp[j + 1] & 0xFF);
+					mb = Math.max(mb, tmp[j + 2] & 0xFF);
 				}
 				int o = y * width * 3 + y0col;
-				dst[o] = mr;
-				dst[o + 1] = mg;
-				dst[o + 2] = mb;
+				buf[o] = (byte) mr;
+				buf[o + 1] = (byte) mg;
+				buf[o + 2] = (byte) mb;
 			}
 		}
-		return dst;
 	}
 
 	/** {@code starSignal} is null (feature off) or a buffer that's zero everywhere
 	 *  except near a genuine transient highlight, where it holds the (possibly
 	 *  neighbour-sourced, post-dilate) peak brightness to recover toward. */
-	private static int starRecover(int channelSum, int[] starSignal, int idx, int denom, float strength) {
+	private static int starRecover(int channelSum, byte[] starSignal, int idx, int denom, float strength) {
 		int avg = channelSum / denom;
 		if (starSignal == null) {
 			return avg;
 		}
-		int signal = starSignal[idx];
+		int signal = starSignal[idx] & 0xFF;
 		if (signal <= 0) {
 			return avg;
 		}

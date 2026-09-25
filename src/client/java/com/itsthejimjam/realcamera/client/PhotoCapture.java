@@ -57,6 +57,9 @@ public final class PhotoCapture {
 	private static int warmupLeft = 0;
 	private static int stacked = 0;
 	private static int lastStackFrames = 0;
+	/** Long edge this capture's long exposure renders at — fixed at the shutter press
+	 *  (see {@link #longExposureEdge}), since the render size must not change mid-capture. */
+	private static int longExpEdge = Integer.MAX_VALUE;
 	private static volatile boolean readbackInFlight = false;
 	private static final ExposureStack STACK = new ExposureStack();
 	private static GpuTexture stackTex;
@@ -110,6 +113,9 @@ public final class PhotoCapture {
 		} else {
 			bracketEvs = null;
 			longExpMode = LongExposure.modeFor(sec, PhotoModeSession.motionBlurTriggerSeconds());
+			if (longExpMode != LongExposure.OFF) {
+				longExpEdge = longExposureEdge(Framing.outputWidth(), Framing.outputHeight());
+			}
 		}
 		bracketBiasEv = 0.0f;
 		subFrames = LongExposure.subFrames(sec);
@@ -128,15 +134,26 @@ public final class PhotoCapture {
 		warmupLeft = 3;
 		readbackInFlight = false;
 
-		if (com.itsthejimjam.realcamera.client.config.PhotoConfig.get().saveEnhancedFile && !wantsEnhancedFile()
+		if (com.itsthejimjam.realcamera.client.config.PhotoConfig.get().saveRawFile && !wantsRawFile()
 				&& bracketEvs == null && longExpMode == LongExposure.OFF) {
 			// Enabled, and otherwise eligible, but over the resolution cap for this shot —
 			// say so, rather than silently not producing the second file.
 			Minecraft mc = Minecraft.getInstance();
 			if (mc.player != null) {
 				mc.player.sendOverlayMessage(Component.literal(ShaderPackCompat.shaderPackActive()
-						? "RAW mode skipped — over the " + ENHANCED_MAX_EDGE + "px cap for now"
+						? "RAW mode skipped — over the " + RAW_MAX_EDGE + "px cap for now"
 						: "RAW mode needs a shader pack — skipped"));
+			}
+		}
+		if (bracketEvs != null && com.itsthejimjam.realcamera.client.config.PhotoConfig.get().autoMergeHdr
+				&& !wantsHdrMerge()) {
+			// Same idea for a bracket: Auto Merge is on but this burst can't be merged, so it
+			// falls back to separate JPEGs — say why instead of leaving the user guessing.
+			Minecraft mc = Minecraft.getInstance();
+			if (mc.player != null) {
+				mc.player.sendOverlayMessage(Component.literal(ShaderPackCompat.shaderPackActive()
+						? "HDR merge skipped — over the " + RAW_MAX_EDGE + "px cap, saving each frame"
+						: "HDR merge needs a shader pack — saving each frame"));
 			}
 		}
 	}
@@ -157,7 +174,7 @@ public final class PhotoCapture {
 		return phase != IDLE && longExpMode != LongExposure.OFF;
 	}
 
-	/** Long-edge cap on the enhanced-file capture. A large enhanced capture caused a full
+	/** Long-edge cap on the RAW-file capture. A large RAW capture caused a full
 	 *  system freeze (GPU-driver-level, not something Java can catch or recover from)
 	 *  before the real root causes (undersized uniform buffer, resize-ramp texture churn,
 	 *  release-before-read ordering) were found and fixed — see HdrCapture.java and
@@ -166,9 +183,9 @@ public final class PhotoCapture {
 	 *  size between the mod's fixed resolution tiers to test incrementally with) — test
 	 *  6K then 8K one at a time, at x1 supersample, watching Task Manager, before trusting
 	 *  either. Drop back to a lower tier immediately if either misbehaves. */
-	private static final int ENHANCED_MAX_EDGE = 7680;
+	private static final int RAW_MAX_EDGE = 7680;
 
-	/** HARD KILL SWITCH. A large capture with "Save Enhanced File" on caused a full
+	/** HARD KILL SWITCH. A large capture with RAW Mode on caused a full
 	 *  system freeze requiring a hard restart — well beyond an application crash, into
 	 *  GPU-driver-hang territory. Re-enabled after: (a) the likely-real root cause was
 	 *  found (the earlier freeze tests turned out to have supersample at x4, meaning the
@@ -179,19 +196,19 @@ public final class PhotoCapture {
 	 *  incrementally, at x1 supersample, watching Task Manager — do not jump straight
 	 *  back to a large/high-supersample combination that hasn't been individually
 	 *  verified. */
-	private static final boolean ENHANCED_FILE_DISABLED = false;
+	private static final boolean RAW_FILE_DISABLED = false;
 
-	/** True while the high-precision enhanced file should be captured alongside the
+	/** True while the high-precision RAW file should be captured alongside the
 	 *  normal photo — a single shot or a long exposure (HdrCapture sources the stacked
 	 *  result via {@code PhotoModeSession.colorViewOverride()} for the latter, same as the
 	 *  live grade chain does; see HdrCapture's class doc). Brackets are handled instead by
 	 *  {@link #wantsHdrMerge()}, which fuses the whole burst into one file rather than
 	 *  enhancing a single frame. */
-	public static boolean wantsEnhancedFile() {
-		if (ENHANCED_FILE_DISABLED) {
+	public static boolean wantsRawFile() {
+		if (RAW_FILE_DISABLED) {
 			return false;
 		}
-		if (!wantsBigFrame() || !com.itsthejimjam.realcamera.client.config.PhotoConfig.get().saveEnhancedFile
+		if (!wantsBigFrame() || !com.itsthejimjam.realcamera.client.config.PhotoConfig.get().saveRawFile
 				|| bracketEvs != null) {
 			return false;
 		}
@@ -201,7 +218,7 @@ public final class PhotoCapture {
 		if (!ShaderPackCompat.shaderPackActive()) {
 			return false;
 		}
-		return Math.max(overrideWidth(), overrideHeight()) <= ENHANCED_MAX_EDGE;
+		return Math.max(overrideWidth(), overrideHeight()) <= RAW_MAX_EDGE;
 	}
 
 	/** True while a bracket sequence's frames should be fused in-mod into one 16-bit HDR
@@ -209,20 +226,20 @@ public final class PhotoCapture {
 	 *  HdrCapture pipeline, resolution cap, and kill switch as RAW Mode, just driven by
 	 *  the bracket loop instead of a single shot. */
 	public static boolean wantsHdrMerge() {
-		if (ENHANCED_FILE_DISABLED) {
+		if (RAW_FILE_DISABLED) {
 			return false;
 		}
 		if (!wantsBigFrame() || !com.itsthejimjam.realcamera.client.config.PhotoConfig.get().autoMergeHdr
 				|| bracketEvs == null) {
 			return false;
 		}
-		// Same reason as wantsEnhancedFile(): with no shader pack there's never any HDR data
+		// Same reason as wantsRawFile(): with no shader pack there's never any HDR data
 		// to merge, and saveBracketFrame() skips the normal JPEGs whenever this is true — so
 		// without this check a bracket taken without a shader pack saved nothing at all.
 		if (!ShaderPackCompat.shaderPackActive()) {
 			return false;
 		}
-		return Math.max(overrideWidth(), overrideHeight()) <= ENHANCED_MAX_EDGE;
+		return Math.max(overrideWidth(), overrideHeight()) <= RAW_MAX_EDGE;
 	}
 
 	/** Progress through the sub-frame stack, 0..1 (0 when not stacking). Drives the
@@ -260,14 +277,15 @@ public final class PhotoCapture {
 
 	private static int[] renderSize() {
 		// Long exposure accumulates full frames on the CPU, so it renders at output size
-		// (no supersample) and caps the long edge to keep memory sane. Bracket frames are
-		// each saved independently, so they get the normal full-quality path.
+		// (no supersample) — stepped down only if the heap can't hold the stack (see
+		// longExposureEdge). Bracket frames are each saved independently, so they get the
+		// normal full-quality path.
 		if (longExpMode != LongExposure.OFF) {
 			int w = Framing.outputWidth();
 			int h = Framing.outputHeight();
 			int edge = Math.max(w, h);
-			if (edge > LongExposure.MAX_EDGE) {
-				double s = (double) LongExposure.MAX_EDGE / edge;
+			if (edge > longExpEdge) {
+				double s = (double) longExpEdge / edge;
 				w = (int) Math.round(w * s) & ~1;
 				h = (int) Math.round(h * s) & ~1;
 			}
@@ -277,12 +295,12 @@ public final class PhotoCapture {
 		return new int[] {Framing.outputWidth() * ss, Framing.outputHeight() * ss};
 	}
 
-	/** Supersample actually used for a capture — forced to x1 when the enhanced file is
+	/** Supersample actually used for a capture — forced to x1 when the RAW file is
 	 *  on. That pipeline's own VRAM footprint (three extra full-size buffers for DoF, plus
 	 *  the RGBA16F expose target — see HdrCapture) eats into the headroom that a plain
 	 *  capture at the same resolution would otherwise have; an 8K x SS4 capture (which
 	 *  Framing.effectiveSupersample() already reduces to an internal render no bigger than
-	 *  a bare 8K x SS1 shot) crashed with the enhanced file on, right after DoF
+	 *  a bare 8K x SS1 shot) crashed with the RAW file on, right after DoF
 	 *  reproduction was added, even though the same resolution had been stable before that
 	 *  addition. Must be used everywhere the render size is computed AND wherever the
 	 *  captured image is downsampled back to output size (see grabDownscale) — the two
@@ -290,7 +308,7 @@ public final class PhotoCapture {
 	private static int effectiveSupersampleForCapture() {
 		com.itsthejimjam.realcamera.client.config.PhotoConfig cfg =
 				com.itsthejimjam.realcamera.client.config.PhotoConfig.get();
-		if ((cfg.saveEnhancedFile || (cfg.autoMergeHdr && Bracket.on())) && ShaderPackCompat.shaderPackActive()) {
+		if ((cfg.saveRawFile || (cfg.autoMergeHdr && Bracket.on())) && ShaderPackCompat.shaderPackActive()) {
 			return 1;
 		}
 		return Framing.effectiveSupersample();
@@ -564,6 +582,31 @@ public final class PhotoCapture {
 		}
 	}
 
+	/** Long edge for a long exposure of {@code w x h}: the full size when the Java heap has
+	 *  room for the stack ({@link ExposureStack#BYTES_PER_PIXEL} per pixel, plus headroom for
+	 *  the game), otherwise stepped down by quarters to no less than
+	 *  {@link LongExposure#MIN_EDGE}. */
+	private static int longExposureEdge(int w, int h) {
+		Runtime rt = Runtime.getRuntime();
+		long free = rt.maxMemory() - (rt.totalMemory() - rt.freeMemory());
+		long budget = free - 512L * 1024 * 1024;
+		int full = Math.max(w, h);
+		int edge = full;
+		while (edge > LongExposure.MIN_EDGE) {
+			double s = (double) edge / full;
+			long pixels = (long) (w * s) * (long) (h * s);
+			if (pixels * ExposureStack.BYTES_PER_PIXEL <= budget) {
+				break;
+			}
+			edge = Math.max(LongExposure.MIN_EDGE, edge * 3 / 4);
+		}
+		if (edge < full) {
+			PhotoMode.LOGGER.warn("[Photo Mode] long exposure reduced to {}px (free heap {} MB)",
+					edge, free / (1024 * 1024));
+		}
+		return edge;
+	}
+
 	private static void grabIfReady(RenderTarget mainTarget) {
 		if (grabQueued) {
 			return;
@@ -584,11 +627,15 @@ public final class PhotoCapture {
 		int outW = rs[0] / ss;
 		int outH = rs[1] / ss;
 		boolean wasLong = longExpMode != LongExposure.OFF;
-		String modeNote = wasLong ? "  (" + LongExposure.OPTIONS[longExpMode] + " · " + lastStackFrames + " frames)" : "";
+		// Say so when a low heap made the long exposure render smaller than the chosen
+		// resolution, rather than just printing a smaller size.
+		boolean capped = wasLong && Math.max(Framing.outputWidth(), Framing.outputHeight()) > longExpEdge;
+		String modeNote = wasLong ? "  (" + LongExposure.OPTIONS[longExpMode] + " · " + lastStackFrames + " frames"
+				+ (capped ? " · reduced to " + longExpEdge + "px, not enough memory" : "") + ")" : "";
 
 		PngWriter.Exif exif = new PngWriter.Exif(PhotoModeSession.getShutterSeconds(), PhotoModeSession.getAperture(),
 				PhotoModeSession.getIso(), PhotoModeSession.getExposureComp(), System.currentTimeMillis());
-		boolean wantsEnhanced = wantsEnhancedFile();
+		boolean wantsRaw = wantsRawFile();
 
 		Screenshot.takeScreenshot(mainTarget, ss, image -> {
 			finishCapture();
@@ -596,13 +643,13 @@ public final class PhotoCapture {
 			// Isolated from the normal save below on purpose: this is new, lower-level GPU
 			// code (see HdrCapture) — a failure here must never take the normal, already-
 			// working photo save down with it.
-			if (wantsEnhanced) {
+			if (wantsRaw) {
 				try {
 					File dir = new File(Minecraft.getInstance().gameDirectory, "photos");
 					dir.mkdirs();
-					HdrCapture.readAndSave(new File(dir, stamp + "_enhanced.png"), exif);
+					HdrCapture.readAndSave(new File(dir, stamp + "_RAW.png"), exif);
 				} catch (Exception e) {
-					PhotoMode.LOGGER.error("[Photo Mode] enhanced file capture failed", e);
+					PhotoMode.LOGGER.error("[Photo Mode] RAW file capture failed", e);
 				}
 			}
 			try {
@@ -615,7 +662,7 @@ public final class PhotoCapture {
 						// Vanilla writer, not PngWriter: the hand-rolled PNG/EXIF encoder was
 						// only ever verified at small resolutions, and a system-freeze-level
 						// crash appeared at 4K the same day it was wired into every normal
-						// capture (not just enhanced ones, which are separately disabled).
+						// capture (not just RAW ones, which are separately disabled).
 						// Reverting the one normal-photo save path back to the thing that's
 						// been stable for this mod's whole history until that's understood.
 						image.writeToFile(file);
@@ -633,7 +680,7 @@ public final class PhotoCapture {
 	}
 
 	/** Runs in the screenshot callback: tear the capture state down. NOT the place to
-	 *  release HdrCapture's texture — this runs before the enhanced-file readback even
+	 *  release HdrCapture's texture — this runs before the RAW-file readback even
 	 *  starts (see grabIfReady), and destroying it here left readAndSave with nothing to
 	 *  read every time, silently. HdrCapture releases itself once its own GPU copy is
 	 *  actually confirmed done (see readAndSave). */

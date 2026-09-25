@@ -32,7 +32,7 @@ import net.minecraft.util.Util;
 import org.lwjgl.system.MemoryUtil;
 
 /**
- * The high-precision "enhanced" capture path: a single hand-built render pass — not the
+ * The high-precision RAW capture path: a single hand-built render pass — not the
  * JSON {@code PostChain} system everything else in this mod uses, which can't express an
  * 8-bit input / 16-bit-float output pair (its one external target is a single fixed
  * format for the whole chain; its internal targets have no configurable format at all).
@@ -112,11 +112,11 @@ public final class HdrCapture {
 	private static final ByteBuffer DOF_SCRATCH = MemoryUtil.memAlloc(DOF_SIZE);
 
 	/** HARD KILL SWITCH for just the DoF reproduction below, independent of
-	 *  ENHANCED_FILE_DISABLED — if this specific stage ever misbehaves, this falls back to
-	 *  the sharp-everywhere enhanced file (already field-tested up to 8K) instead of losing
+	 *  RAW_FILE_DISABLED — if this specific stage ever misbehaves, this falls back to
+	 *  the sharp-everywhere RAW file (already field-tested up to 8K) instead of losing
 	 *  the whole feature again. Flip this first if something looks wrong after enabling
 	 *  depth here; only reach for the bigger switch if that alone doesn't fix it. */
-	private static final boolean ENHANCED_DOF_DISABLED = false;
+	private static final boolean RAW_DOF_DISABLED = false;
 
 	private static RenderPipeline pipeline;
 	private static boolean pipelineValid;
@@ -166,7 +166,7 @@ public final class HdrCapture {
 				(long) UNIFORM_SIZE);
 
 		// DoF gather pipelines — private, isolated from the live JSON chain (see class doc
-		// for why). Failure here is non-fatal: the enhanced file just falls back to sharp.
+		// for why). Failure here is non-fatal: the RAW file just falls back to sharp.
 		try {
 			BindGroupLayout dofUniformLayout = BindGroupLayout.builder()
 					.withUniform(DOF_BLOCK, UniformType.UNIFORM_BUFFER)
@@ -218,7 +218,7 @@ public final class HdrCapture {
 					hValid, vValid, gValid);
 
 			dofUniformBuffer = RenderSystem.getDevice().createBuffer(
-					() -> "realcamera DofConfig (enhanced)",
+					() -> "realcamera DofConfig (RAW)",
 					GpuBuffer.USAGE_UNIFORM | GpuBuffer.USAGE_COPY_DST,
 					(long) DOF_SIZE);
 		} catch (Throwable t) {
@@ -233,7 +233,7 @@ public final class HdrCapture {
 		} else if (hdrTarget.width != width || hdrTarget.height != height) {
 			hdrTarget.resize(width, height);
 		}
-		if (ENHANCED_DOF_DISABLED || !dofPipelinesValid) {
+		if (RAW_DOF_DISABLED || !dofPipelinesValid) {
 			return;
 		}
 		if (preH == null) {
@@ -271,7 +271,7 @@ public final class HdrCapture {
 	 *                  long-exposure result) when that's set. Callers resolve which one;
 	 *                  this class just exposes whatever view it's handed.
 	 * @param depthView scene depth for DoF reproduction, or {@code null} to skip it (the
-	 *                   enhanced file then comes out sharp everywhere, as before).
+	 *                   RAW file then comes out sharp everywhere, as before).
 	 */
 	public static void capture(GpuTextureView colorView, int width, int height, GpuTextureView depthView,
 			float exposureMult, float whiteBalance, float aperture, float focusU, float focusV) {
@@ -283,7 +283,7 @@ public final class HdrCapture {
 			ensureTarget(width, height);
 
 			GpuTextureView colorSource = colorView;
-			if (!ENHANCED_DOF_DISABLED && dofPipelinesValid && depthView != null) {
+			if (!RAW_DOF_DISABLED && dofPipelinesValid && depthView != null) {
 				colorSource = runDofGather(colorView, depthView, aperture, focusU, focusV);
 			}
 
@@ -309,7 +309,7 @@ public final class HdrCapture {
 			}
 		} catch (Throwable t) {
 			// The normal capture must never fail because this extra pass did — log once
-			// and let PhotoCapture's readback just skip the enhanced file for this shot.
+			// and let PhotoCapture's readback just skip the RAW file for this shot.
 			if (!pipelineLogged) {
 				pipelineLogged = true;
 				PhotoMode.LOGGER.error("[Photo Mode] HdrCapture pass failed", t);
@@ -452,7 +452,7 @@ public final class HdrCapture {
 	}
 
 	/**
-	 * Read back the scratch target and save it as the RAW Mode enhanced file — call once
+	 * Read back the scratch target and save it as the RAW Mode RAW file — call once
 	 * the caller knows this is the settled frame. Render-thread work is kept to the copy
 	 * + a raw byte memcpy; the actual half-float decode and file write happen on the IO
 	 * pool.
@@ -465,16 +465,16 @@ public final class HdrCapture {
 			// CPU-side `raw` array above, and this callback only runs once the copy's
 			// own fence confirms the GPU is done reading from it. Releasing any earlier
 			// (e.g. unconditionally when a capture ends, regardless of whether an
-			// enhanced file was even requested) risked destroying it while a copy from
+			// RAW file was even requested) risked destroying it while a copy from
 			// it was still in flight, or before this method got a chance to read it at
 			// all.
 			release();
 			Util.ioPool().execute(() -> {
 				try {
 					PngWriter.write16(file, width, height, raw, exif);
-					PhotoMode.LOGGER.info("[Photo Mode] HdrCapture: enhanced file written: {}", file.getName());
+					PhotoMode.LOGGER.info("[Photo Mode] HdrCapture: RAW file written: {}", file.getName());
 				} catch (Exception e) {
-					PhotoMode.LOGGER.error("[Photo Mode] failed to save enhanced photo", e);
+					PhotoMode.LOGGER.error("[Photo Mode] failed to save RAW photo", e);
 				}
 			});
 		});

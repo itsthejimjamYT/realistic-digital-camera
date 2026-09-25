@@ -170,8 +170,8 @@ public final class PhotoPanelScreen extends Screen {
 						Framing::getSsIndex, Framing::setSsIndex,
 						Framing::stepSupersample, Framing::resetSupersample),
 				excludedFromPageReset(listCell("RAW Mode", PhotoConfig.TOGGLE,
-						PhotoConfig::enhancedFileIndex, PhotoConfig::setEnhancedFileIndex,
-						PhotoConfig::stepEnhancedFile, PhotoConfig::resetEnhancedFile)),
+						PhotoConfig::rawFileIndex, PhotoConfig::setRawFileIndex,
+						PhotoConfig::stepRawFile, PhotoConfig::resetRawFile)),
 		}));
 		t.add(new Tab("Display", new Cell[] {
 				listCell("Grid", DisplayAids.GRID_TYPES,
