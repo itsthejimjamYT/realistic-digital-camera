@@ -8,10 +8,18 @@
     "   I   "
   ],
   "key": {
-    "I": "minecraft:iron_ingot",
-    "U": "minecraft:gold_ingot",
-    "D": "minecraft:diamond",
-    "C": "realcamera:camera_body"
+    "I": {
+      "item": "minecraft:iron_ingot"
+    },
+    "U": {
+      "item": "minecraft:gold_ingot"
+    },
+    "D": {
+      "item": "minecraft:diamond"
+    },
+    "C": {
+      "item": "realcamera:camera_body"
+    }
   },
   "result": "realcamera:drone"
 }

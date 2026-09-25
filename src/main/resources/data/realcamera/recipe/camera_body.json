@@ -6,13 +6,21 @@
     "IRI"
   ],
   "key": {
-    "I": "minecraft:iron_ingot",
-    "G": "minecraft:glass",
-    "O": "minecraft:comparator",
-    "R": "minecraft:redstone"
+    "I": {
+      "item": "minecraft:iron_ingot"
+    },
+    "G": {
+      "item": "minecraft:glass"
+    },
+    "O": {
+      "item": "minecraft:comparator"
+    },
+    "R": {
+      "item": "minecraft:redstone"
+    }
   },
   "result": {
-    "item": "realcamera:camera_body",
+    "id": "realcamera:camera_body",
     "count": 1
   }
 }

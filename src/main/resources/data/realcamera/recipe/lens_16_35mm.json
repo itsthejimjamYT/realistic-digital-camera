@@ -8,11 +8,21 @@
     "IIIIIII"
   ],
   "key": {
-    "I": "minecraft:iron_ingot",
-    "G": "minecraft:glass",
-    "P": "minecraft:glass_pane",
-    "Q": "minecraft:quartz",
-    "C": "minecraft:copper_ingot"
+    "I": {
+      "item": "minecraft:iron_ingot"
+    },
+    "G": {
+      "item": "minecraft:glass"
+    },
+    "P": {
+      "item": "minecraft:glass_pane"
+    },
+    "Q": {
+      "item": "minecraft:quartz"
+    },
+    "C": {
+      "item": "minecraft:copper_ingot"
+    }
   },
   "result": "realcamera:lens_16_35mm"
 }
