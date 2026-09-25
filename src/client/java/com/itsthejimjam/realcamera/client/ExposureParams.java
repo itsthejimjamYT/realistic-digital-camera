@@ -85,20 +85,22 @@ public final class ExposureParams {
 		if (level == null) {
 			return 1.0;
 		}
-		// level.getSkyDarken() — the plain no-arg getter 26.2 uses — returns the raw 0..11
-		// vanilla field (0 = day, 11 = night). ClientLevel ALSO has a same-named
-		// getSkyDarken(float partialTick) overload with a completely different, unrelated
-		// range (~0.2 at night .. ~1.0 at day, vanilla's per-frame sky/fog blend factor,
-		// confirmed via javap on ClientLevel's actual bytecode) — the 1.20.4 port originally picked
-		// that overload by mistake. Dividing THAT by 11 collapses day and night to nearly
-		// the same tiny fraction, so this always evaluated to ~0.95-1.0 regardless of the
-		// actual time of day and the night-darkening feature never engaged.
 		// No day/night cycle (Nether, End): vanilla still computes a sky-darken from their
 		// fixed time — the Nether's reads as permanent midnight — so skip it there.
 		if (!level.dimensionType().hasSkyLight() || level.dimensionType().hasFixedTime()) {
 			return 1.0;
 		}
-		double daylight = 1.0 - Mth.clamp(level.getSkyDarken() / 11.0, 0.0, 1.0);
+		// Daylight computed here from the live time of day and weather — vanilla's own
+		// sky-darken formula (Level.updateSkyBrightness), unquantised. Not level.getSkyDarken():
+		// on 1.21.1 the CLIENT level only runs updateSkyBrightness() once, in its constructor,
+		// so that value is frozen at whatever time it was when you joined the world (a world
+		// joined at noon stayed "daylight" all night, and /time set never changed it). The
+		// getSkyDarken(float) overload is live but is the sky-colour blend, with a different
+		// range and curve.
+		double sun = 0.5 + 2.0 * Mth.clamp(Mth.cos(level.getTimeOfDay(1.0f) * (float) (Math.PI * 2.0)), -0.25, 0.25);
+		double rain = 1.0 - level.getRainLevel(1.0f) * 5.0 / 16.0;
+		double thunder = 1.0 - level.getThunderLevel(1.0f) * 5.0 / 16.0;
+		double daylight = Mth.clamp(sun * rain * thunder, 0.0, 1.0);
 		double night = 1.0 - daylight;
 		double nightLight = NIGHT_FLOOR + MOON_GAIN * level.getMoonBrightness();
 		return Mth.clamp(daylight + night * nightLight, NIGHT_FLOOR, 1.1);
