@@ -8,7 +8,7 @@
 // RGBA16F, so headroom this preserves actually survives to the saved file.
 //
 // Its input is the DoF-gathered frame (the realcamera_hdr chain runs the same prefilter +
-// gather passes as the live preview first), so the enhanced file keeps the photo's blur.
+// gather passes as the live preview first), so the RAW file keeps the photo's blur.
 
 uniform sampler2D DiffuseSampler;
 

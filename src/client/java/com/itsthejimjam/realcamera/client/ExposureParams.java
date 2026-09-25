@@ -50,8 +50,12 @@ public final class ExposureParams {
 	// Before the photographic exposure we darken the frame back down by the real scene
 	// light (time of day, moon, weather), so a night shot is genuinely dark at base
 	// settings and needs a long shutter + high ISO, like a real sensor.
-	private static final double NIGHT_FLOOR = 0.03;
-	private static final double MOON_GAIN = 0.10;
+	// Deep-night light is NIGHT_FLOOR (new moon, ~-6.4 stops) up to NIGHT_FLOOR + MOON_GAIN
+	// (full moon, ~-4.6 stops). The maxed-out camera (30 s, ISO 12800, f/1.4) gets back to
+	// about -2 .. 0 stops through the exposure curve's shoulder, so a night shot is usable
+	// but only with a real long exposure — at base settings it's properly dark.
+	private static final double NIGHT_FLOOR = 0.012;
+	private static final double MOON_GAIN = 0.030;
 	/** Warm/cool strength of the white-balance shift at the dial extremes. */
 	private static final float WB_STRENGTH = 0.22f;
 
@@ -74,8 +78,8 @@ public final class ExposureParams {
 		return SHOULDER_KNEE + SHOULDER_WIDTH * Math.log1p((ev - SHOULDER_KNEE) / SHOULDER_WIDTH);
 	}
 
-	/** 0..~1 real scene light: 1 in full daylight, {@link #NIGHT_FLOOR} at deep night,
-	 *  with a little moonlight lift; drops in rain / thunder via the vanilla sky-darken. */
+	/** 0..~1 real scene light: 1 in full daylight, {@link #NIGHT_FLOOR} at a new-moon night,
+	 *  lifted by the moon phase; drops in rain / thunder via the vanilla sky-darken. */
 	private static double sceneLight() {
 		ClientLevel level = Minecraft.getInstance().level;
 		if (level == null) {
@@ -89,9 +93,15 @@ public final class ExposureParams {
 		// that overload by mistake. Dividing THAT by 11 collapses day and night to nearly
 		// the same tiny fraction, so this always evaluated to ~0.95-1.0 regardless of the
 		// actual time of day and the night-darkening feature never engaged.
+		// No day/night cycle (Nether, End): vanilla still computes a sky-darken from their
+		// fixed time — the Nether's reads as permanent midnight — so skip it there.
+		if (!level.dimensionType().hasSkyLight() || level.dimensionType().hasFixedTime()) {
+			return 1.0;
+		}
 		double daylight = 1.0 - Mth.clamp(level.getSkyDarken() / 11.0, 0.0, 1.0);
 		double night = 1.0 - daylight;
-		return Mth.clamp(NIGHT_FLOOR + (1.0 - NIGHT_FLOOR) * daylight + night * MOON_GAIN, NIGHT_FLOOR, 1.1);
+		double nightLight = NIGHT_FLOOR + MOON_GAIN * level.getMoonBrightness();
+		return Mth.clamp(daylight + night * nightLight, NIGHT_FLOOR, 1.1);
 	}
 
 	public static void apply(PostChain chain, float aperture, double shutterSeconds, int iso,

@@ -9,6 +9,7 @@ import java.util.WeakHashMap;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
 
+import net.minecraft.client.renderer.ItemBlockRenderTypes;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.block.BlockRenderDispatcher;
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
@@ -21,6 +22,7 @@ import net.minecraft.util.RandomSource;
 import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 
 /**
@@ -71,8 +73,12 @@ public class TripodBlockEntityRenderer implements BlockEntityRenderer<TripodBloc
 		pose.translate(0.5, 0.0, 0.5);
 		pose.mulPose(Axis.YP.rotationDegrees(45.0f));
 		pose.translate(-0.5, 0.0, -0.5);
-		blockRenderer.renderSingleBlock(
-				PhotoMode.TRIPOD.defaultBlockState(), pose, buffer, packedLight, packedOverlay);
+		// Straight to the model renderer: renderSingleBlock() skips RenderShape.INVISIBLE
+		// blocks, which is exactly what the tripod is (see the class doc) — it drew nothing.
+		BlockState stand = PhotoMode.TRIPOD.defaultBlockState();
+		blockRenderer.getModelRenderer().renderModel(pose.last(),
+				buffer.getBuffer(ItemBlockRenderTypes.getRenderType(stand, false)), stand,
+				blockRenderer.getBlockModel(stand), 1.0f, 1.0f, 1.0f, packedLight, packedOverlay);
 		pose.popPose();
 
 		ItemStack cam = be.getCamera();

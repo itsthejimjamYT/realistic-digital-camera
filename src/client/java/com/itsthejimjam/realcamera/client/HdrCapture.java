@@ -19,7 +19,7 @@ import org.lwjgl.opengl.GL30;
 import org.lwjgl.system.MemoryUtil;
 
 /**
- * The high-precision "enhanced" capture path behind RAW Mode and the bracket HDR merge —
+ * The high-precision RAW capture path behind RAW Mode and the bracket HDR merge —
  * the 1.21.1 port of 26.2's class of the same name. Applies just the two camera-accurate
  * steps (exposure, white balance) to the pristine frame and writes into a genuinely
  * higher-precision target, skipping every destructive step the normal photo's grade applies
@@ -40,7 +40,7 @@ import org.lwjgl.system.MemoryUtil;
  * normal photo always look at the same data.
  *
  * <p>Only driven from the shader-pack path, exactly like 26.2 (see
- * {@code PhotoCapture.wantsEnhancedFile}): its DoF gather reads the pack's depth texture.
+ * {@code PhotoCapture.wantsRawFile}): its DoF gather reads the pack's depth texture.
  */
 public final class HdrCapture {
 
@@ -56,7 +56,7 @@ public final class HdrCapture {
 	}
 
 	/**
-	 * Run the enhanced chain against {@code minecraft:main} (still pristine — call it before the
+	 * Run the RAW chain against {@code minecraft:main} (still pristine — call it before the
 	 * live grade chain), writing into the RGBA16F {@code hdr} target. Cheap enough to call every
 	 * frame while a capture is in flight, so it's always current by the time a caller decides to
 	 * read it back.
@@ -82,11 +82,11 @@ public final class HdrCapture {
 			chain.process(partialTick);
 			if (!drawLogged) {
 				drawLogged = true;
-				PhotoMode.LOGGER.info("[Photo Mode] HdrCapture: enhanced pass completed");
+				PhotoMode.LOGGER.info("[Photo Mode] HdrCapture: RAW pass completed");
 			}
 		} catch (Throwable t) {
 			// The normal capture must never fail because this extra pass did — log once and
-			// let the readback below just skip the enhanced file for this shot.
+			// let the readback below just skip the RAW file for this shot.
 			if (!failLogged) {
 				failLogged = true;
 				PhotoMode.LOGGER.error("[Photo Mode] HdrCapture pass failed", t);
@@ -137,7 +137,7 @@ public final class HdrCapture {
 		}
 	}
 
-	/** Read back the enhanced target and save it as the RAW Mode file — call once the caller
+	/** Read back the RAW target and save it as the RAW Mode file — call once the caller
 	 *  knows this is the settled frame. The half-float decode and file write run on the IO pool. */
 	public static void readAndSave(File file, PngWriter.Exif exif) {
 		readRawBytes((width, height, raw) -> {
@@ -145,9 +145,9 @@ public final class HdrCapture {
 			Util.ioPool().execute(() -> {
 				try {
 					PngWriter.write16(file, width, height, raw, exif);
-					PhotoMode.LOGGER.info("[Photo Mode] HdrCapture: enhanced file written: {}", file.getName());
+					PhotoMode.LOGGER.info("[Photo Mode] HdrCapture: RAW file written: {}", file.getName());
 				} catch (Exception e) {
-					PhotoMode.LOGGER.error("[Photo Mode] failed to save enhanced photo", e);
+					PhotoMode.LOGGER.error("[Photo Mode] failed to save RAW photo", e);
 				}
 			});
 		});

@@ -102,7 +102,7 @@ public final class EffectChains {
 
 		applyStackedExposure(main);
 		boolean atCaptureSize = mw == PhotoCapture.overrideWidth() && mh == PhotoCapture.overrideHeight();
-		if ((PhotoCapture.wantsEnhancedFile() || PhotoCapture.wantsHdrMerge()) && atCaptureSize) {
+		if ((PhotoCapture.wantsRawFile() || PhotoCapture.wantsHdrMerge()) && atCaptureSize) {
 			// Must run BEFORE the live chain below overwrites minecraft:main with the graded
 			// result — the last point in the frame where it's still the ungraded scene. Gated
 			// on the final size so the float targets aren't reallocated at every intermediate

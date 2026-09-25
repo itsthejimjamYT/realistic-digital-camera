@@ -11,6 +11,7 @@ import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 import com.google.gson.Gson;
+import com.google.gson.annotations.SerializedName;
 import com.google.gson.GsonBuilder;
 import com.itsthejimjam.realcamera.PhotoMode;
 
@@ -76,13 +77,15 @@ public final class PhotoConfig {
 	 *  than the average, so it can't uniformly brighten the whole shot. */
 	public float starTrailIntensity = 0.15f;
 
-	// ---- Enhanced file ----
+	// ---- RAW Mode ----
 	/** Also save a second, high-precision 16-bit file alongside the normal photo — the
 	 *  camera-accurate exposure/white-balance only, skipping the destructive contrast
 	 *  crush / film recipe / highlight clamp the normal 8-bit photo applies, so real
 	 *  shadow/highlight detail survives for recovery in an editor. Off by default: it's
 	 *  extra capture time and disk space, and most shots don't need it. */
-	public boolean saveEnhancedFile = false;
+	// Config key was "saveEnhancedFile" before the rename — still read from older config files.
+	@SerializedName(value = "saveRawFile", alternate = {"saveEnhancedFile"})
+	public boolean saveRawFile = false;
 
 	// ---- HDR bracket merge ----
 	/** When a bracket sequence finishes, fuse the frames in-mod into one 16-bit HDR file
@@ -265,22 +268,22 @@ public final class PhotoConfig {
 
 	public static final String[] TOGGLE = {"Off", "On"};
 
-	public static int enhancedFileIndex() {
-		return c().saveEnhancedFile ? 1 : 0;
+	public static int rawFileIndex() {
+		return c().saveRawFile ? 1 : 0;
 	}
 
-	public static void setEnhancedFileIndex(int i) {
-		c().saveEnhancedFile = i == 1;
+	public static void setRawFileIndex(int i) {
+		c().saveRawFile = i == 1;
 		dirty = true;
 	}
 
-	public static void stepEnhancedFile(int dir) {
-		c().saveEnhancedFile = !c().saveEnhancedFile;
+	public static void stepRawFile(int dir) {
+		c().saveRawFile = !c().saveRawFile;
 		dirty = true;
 	}
 
-	public static void resetEnhancedFile() {
-		c().saveEnhancedFile = false;
+	public static void resetRawFile() {
+		c().saveRawFile = false;
 		dirty = true;
 	}
 
