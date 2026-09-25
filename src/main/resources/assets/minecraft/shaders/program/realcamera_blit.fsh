@@ -176,9 +176,9 @@ void main() {
     // puts the camera back. (The highlight shoulder below finishes the top end.)
     {
         const float pivot = 0.42;     // tonal centre the contrast pivots around
-        const float contrast = 1.36;  // midtone S-curve strength
-        const float toe = 0.055;      // extra crush right at the black point
-        const float sat = 1.06;       // slight saturation, like a "standard" profile
+        const float contrast = 1.18;  // midtone S-curve strength (1.0 = none; was 1.36, read too punchy)
+        const float toe = 0.03;       // extra crush right at the black point (was 0.055)
+        const float sat = 1.03;       // slight saturation (was 1.06)
         rgb = max((rgb - pivot) * contrast + pivot, 0.0);
         rgb = max(rgb - toe * exp(-rgb * 14.0), 0.0);
         float l = dot(rgb, LUMA);
