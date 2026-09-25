@@ -114,7 +114,7 @@ active. Without one, a bracket saves its frames as separate JPEGs and RAW mode i
 
 1. Install [Fabric Loader](https://fabricmc.net/use/installer/) for Minecraft 1.21.1.
 2. Download the mod `.jar` from the [Releases](../../releases) page — pick the build
-   tagged for 1.21.1 (e.g. `realcamera-1.0.1+1.21.1.jar`).
+   tagged for 1.21.1 (e.g. `realcamera-1.0.2+1.21.1.jar`).
 3. Drop it, along with [Fabric API](https://modrinth.com/mod/fabric-api) for 1.21.1, into
    your `mods/` folder.
 4. Optional: **Mod Menu** + **Cloth Config** for the in-game settings screen, and **JEI**
