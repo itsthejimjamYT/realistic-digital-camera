@@ -104,8 +104,11 @@ Merge** to *Save Each* to get every exposure as its own JPEG with real EXIF
 (`..._BRACKET_1of3_...`) and combine them yourself in an HDR / photo editor (Lightroom,
 Photoshop, Darktable, …).
 
-**RAW mode** (Frame tab) additionally saves a 16-bit `..._enhanced.png` next to each
+**RAW mode** (Frame tab) additionally saves a 16-bit `..._RAW.png` next to each
 photo, without the camera's contrast and grade baked in, for more room to edit.
+
+HDR merge and RAW mode both run while an [Iris](https://modrinth.com/mod/iris) shader pack is
+active. Without one, a bracket saves its frames as separate JPEGs and RAW mode is skipped.
 
 ## Install
 

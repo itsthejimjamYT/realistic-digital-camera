@@ -8,11 +8,9 @@
 // clamped to [0,1] and this pass's target is RGBA16_FLOAT, so headroom this preserves
 // actually survives to the saved file instead of being thrown away.
 //
-// No DoF blur reproduction here — sources the pristine frame directly, so the enhanced
-// file comes out sharp everywhere even where the normal photo shows background blur. An
-// attempt to source this from the DoF pass's own "swap" output instead (marked
-// persistent so it'd survive past chain.process()) repeatedly crashed the game during a
-// capture; reverted back to this simpler, confirmed-safe source.
+// Its input is the DoF-gathered frame from HdrCapture's own private prefilter + gather
+// passes (not the live chain's "swap" output — reading that repeatedly crashed the game;
+// see HdrCapture's class doc), so the RAW file keeps the photo's blur.
 
 uniform sampler2D InSampler;
 

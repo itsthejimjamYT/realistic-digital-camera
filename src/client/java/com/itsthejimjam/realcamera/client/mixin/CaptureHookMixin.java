@@ -119,7 +119,7 @@ public class CaptureHookMixin {
 				FilmParams.apply(chain, PhotoModeSession.getRecipeIndex(), PhotoModeSession.getRecipeStrength(),
 						PhotoModeSession.filterPolar(), PhotoModeSession.filterMist());
 				AidParams.apply(chain);
-				if ((PhotoCapture.wantsEnhancedFile() || PhotoCapture.wantsHdrMerge())
+				if ((PhotoCapture.wantsRawFile() || PhotoCapture.wantsHdrMerge())
 						&& mw == PhotoCapture.overrideWidth() && mh == PhotoCapture.overrideHeight()) {
 					// Must run BEFORE chain.process() below overwrites mainRenderTarget with
 					// the graded result — this is the last point in the frame where it's
@@ -140,7 +140,7 @@ public class CaptureHookMixin {
 					// Colour source: the live grade chain doesn't always read the raw render
 					// target either — during a long exposure's develop phase it's redirected
 					// to the CPU-stacked result via colorViewOverride() (see
-					// PostPassInputMixin). Resolving the same override here means the enhanced
+					// PostPassInputMixin). Resolving the same override here means the RAW
 					// file and the normal photo are always looking at the same data.
 					GpuTextureView colorOverride = PhotoModeSession.colorViewOverride();
 					GpuTextureView colorSource = colorOverride != null

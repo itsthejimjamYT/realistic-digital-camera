@@ -55,7 +55,11 @@ public class LevelPostMixin {
 	private void realcamera$addEffectChain(CallbackInfo ci, @Local FrameGraphBuilder frame) {
 		// With a shader pack active, the pack re-composites after this point and discards
 		// writes here — that case is handled by CaptureHookMixin instead.
-		if (!PhotoModeSession.isActive() || ShaderPackCompat.shaderPackActive()) {
+		// While a long exposure stacks its raw sub-frames the chain is held off (as on the
+		// shader-pack path in CaptureHookMixin) — the stack is developed and graded once at
+		// the end. Grading each sub-frame here too graded the finished shot twice.
+		if (!PhotoModeSession.isActive() || ShaderPackCompat.shaderPackActive()
+				|| PhotoCapture.isLongExposureStacking()) {
 			return;
 		}
 		Minecraft mc = Minecraft.getInstance();
